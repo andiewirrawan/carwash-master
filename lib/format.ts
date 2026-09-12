@@ -1,0 +1,77 @@
+/**
+ * Format currency nominal with Indonesian thousand separators (dots), strictly without "Rp".
+ * Example: 200000 -> "200.000", 15000 -> "15.000"
+ */
+export function formatNominal(amount: number | string | null | undefined): string {
+  if (amount === null || amount === undefined || amount === '') return '0';
+  const num = typeof amount === 'string' ? parseFloat(amount) : amount;
+  if (isNaN(num)) return '0';
+  
+  return new Intl.NumberFormat('id-ID', {
+    maximumFractionDigits: 0,
+    minimumFractionDigits: 0,
+  }).format(num);
+}
+
+/**
+ * Parses user formatted string (e.g. "200.000") back to a raw integer/number for DB storage.
+ */
+export function parseNominal(str: string | number): number {
+  if (typeof str === 'number') return str;
+  if (!str) return 0;
+  const clean = str.replace(/[^0-9]/g, '');
+  return clean ? parseInt(clean, 10) : 0;
+}
+
+/**
+ * Format date to dd/mm/yyyy string.
+ * Accepts ISO string, YYYY-MM-DD, or Date object.
+ */
+export function formatDate(dateInput: string | Date | null | undefined): string {
+  if (!dateInput) return '-';
+  
+  try {
+    let dateObj: Date;
+    if (typeof dateInput === 'string') {
+      // Handle YYYY-MM-DD local format properly without timezone shifts
+      if (/^\d{4}-\d{2}-\d{2}$/.test(dateInput)) {
+        const [y, m, d] = dateInput.split('-').map(Number);
+        dateObj = new Date(y, m - 1, d);
+      } else {
+        dateObj = new Date(dateInput);
+      }
+    } else {
+      dateObj = dateInput;
+    }
+
+    if (isNaN(dateObj.getTime())) return String(dateInput);
+
+    const day = String(dateObj.getDate()).padStart(2, '0');
+    const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const year = dateObj.getFullYear();
+
+    return `${day}/${month}/${year}`;
+  } catch {
+    return String(dateInput);
+  }
+}
+
+/**
+ * Format date to input string YYYY-MM-DD (for HTML <input type="date">)
+ */
+export function toInputDate(dateInput: string | Date | null | undefined): string {
+  if (!dateInput) return new Date().toISOString().split('T')[0];
+  try {
+    if (typeof dateInput === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateInput)) {
+      return dateInput;
+    }
+    const d = new Date(dateInput);
+    if (isNaN(d.getTime())) return new Date().toISOString().split('T')[0];
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  } catch {
+    return new Date().toISOString().split('T')[0];
+  }
+}
