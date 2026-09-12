@@ -83,6 +83,12 @@ export default function TransactionsPage() {
   const [customerIntensity, setCustomerIntensity] = useState<number>(1);
   const [isNewCustomer, setIsNewCustomer] = useState<boolean>(false);
 
+  // Cascading Selection State
+  const [selectedKendaraan, setSelectedKendaraan] = useState<string>('');
+  const [selectedPaket, setSelectedPaket] = useState<string>('');
+  const [selectedFasilitas, setSelectedFasilitas] = useState<string>('');
+  const [selectedTipe, setSelectedTipe] = useState<string>('');
+
   const [selectedPriceId, setSelectedPriceId] = useState<number | ''>('');
   const [hargaCustom, setHargaCustom] = useState<string>('');
   const [isHargaCustom, setIsHargaCustom] = useState<boolean>(false);
@@ -156,6 +162,96 @@ export default function TransactionsPage() {
     } else {
       setCustomerFound(null);
       setIsNewCustomer(false);
+    }
+  };
+
+  // Cascading Options
+  const availableKendaraan = useMemo(() => {
+    const list = Array.from(
+      new Set(prices.map((p) => p.kendaraan?.trim()).filter(Boolean) as string[])
+    );
+    return list;
+  }, [prices]);
+
+  const availablePaket = useMemo(() => {
+    if (!selectedKendaraan) return [];
+    const filtered = prices.filter((p) => p.kendaraan?.trim() === selectedKendaraan.trim());
+    return Array.from(new Set(filtered.map((p) => p.paket?.trim()).filter(Boolean) as string[]));
+  }, [prices, selectedKendaraan]);
+
+  const availableFasilitas = useMemo(() => {
+    if (!selectedKendaraan || !selectedPaket) return [];
+    const filtered = prices.filter(
+      (p) =>
+        p.kendaraan?.trim() === selectedKendaraan.trim() &&
+        p.paket?.trim() === selectedPaket.trim()
+    );
+    return Array.from(new Set(filtered.map((p) => p.fasilitas?.trim()).filter(Boolean) as string[]));
+  }, [prices, selectedKendaraan, selectedPaket]);
+
+  const availableTipe = useMemo(() => {
+    if (!selectedKendaraan || !selectedPaket || !selectedFasilitas) return [];
+    const filtered = prices.filter(
+      (p) =>
+        p.kendaraan?.trim() === selectedKendaraan.trim() &&
+        p.paket?.trim() === selectedPaket.trim() &&
+        p.fasilitas?.trim() === selectedFasilitas.trim()
+    );
+    return Array.from(new Set(filtered.map((p) => p.tipe?.trim()).filter(Boolean) as string[]));
+  }, [prices, selectedKendaraan, selectedPaket, selectedFasilitas]);
+
+  const handleKendaraanChange = (kendaraanVal: string) => {
+    setSelectedKendaraan(kendaraanVal);
+    setSelectedPaket('');
+    setSelectedFasilitas('');
+    setSelectedTipe('');
+    setSelectedPriceId('');
+    setHargaCustom('');
+    setIsHargaCustom(false);
+  };
+
+  const handlePaketChange = (paketVal: string) => {
+    setSelectedPaket(paketVal);
+    setSelectedFasilitas('');
+    setSelectedTipe('');
+    setSelectedPriceId('');
+    setHargaCustom('');
+    setIsHargaCustom(false);
+  };
+
+  const handleFasilitasChange = (fasilitasVal: string) => {
+    setSelectedFasilitas(fasilitasVal);
+    setSelectedTipe('');
+    setSelectedPriceId('');
+    setHargaCustom('');
+    setIsHargaCustom(false);
+  };
+
+  const handleTipeChange = (tipeVal: string) => {
+    setSelectedTipe(tipeVal);
+    if (!tipeVal) {
+      setSelectedPriceId('');
+      setHargaCustom('');
+      setIsHargaCustom(false);
+      return;
+    }
+
+    const matched = prices.find(
+      (p) =>
+        p.kendaraan?.trim() === selectedKendaraan.trim() &&
+        p.paket?.trim() === selectedPaket.trim() &&
+        p.fasilitas?.trim() === selectedFasilitas.trim() &&
+        p.tipe?.trim() === tipeVal.trim()
+    );
+
+    if (matched) {
+      setSelectedPriceId(matched.id);
+      setHargaCustom(String(matched.harga));
+      setIsHargaCustom(false);
+    } else {
+      setSelectedPriceId('');
+      setHargaCustom('');
+      setIsHargaCustom(false);
     }
   };
 
@@ -304,6 +400,10 @@ export default function TransactionsPage() {
       setCustomerFound(null);
       setCustomerNama('');
       setCustomerHp('');
+      setSelectedKendaraan('');
+      setSelectedPaket('');
+      setSelectedFasilitas('');
+      setSelectedTipe('');
       setSelectedPriceId('');
       setHargaCustom('');
       setIsHargaCustom(false);
@@ -327,9 +427,26 @@ export default function TransactionsPage() {
     setEditTrx(trx);
     setTanggal(trx.tanggal);
     setNoPolisiInput(trx.no_polisi || '');
-    setSelectedPriceId(trx.price_list_id || '');
-    setHargaCustom(String(trx.harga));
-    setIsHargaCustom(trx.harga !== (prices.find((p) => p.id === trx.price_list_id)?.harga || trx.harga));
+
+    const pItem = prices.find((p) => p.id === trx.price_list_id);
+    if (pItem) {
+      setSelectedKendaraan(pItem.kendaraan);
+      setSelectedPaket(pItem.paket);
+      setSelectedFasilitas(pItem.fasilitas);
+      setSelectedTipe(pItem.tipe);
+      setSelectedPriceId(pItem.id);
+      setHargaCustom(String(trx.harga));
+      setIsHargaCustom(trx.harga !== pItem.harga);
+    } else {
+      setSelectedKendaraan(trx.kendaraan || '');
+      setSelectedPaket(trx.paket_nama || '');
+      setSelectedFasilitas('');
+      setSelectedTipe(trx.tipe || '');
+      setSelectedPriceId(trx.price_list_id || '');
+      setHargaCustom(String(trx.harga));
+      setIsHargaCustom(false);
+    }
+
     setMetodeBayar(trx.metode_bayar as any);
     setKeterangan(trx.keterangan || '');
     setCustomerNama(trx.customer_nama || '');
@@ -413,12 +530,18 @@ export default function TransactionsPage() {
               setEditTrx(null);
               setTanggal(todayStr);
               setNoPolisiInput('');
+              setNopolError(null);
               setCustomerFound(null);
               setCustomerNama('');
               setCustomerHp('');
+              setSelectedKendaraan('');
+              setSelectedPaket('');
+              setSelectedFasilitas('');
+              setSelectedTipe('');
               setSelectedPriceId('');
               setHargaCustom('');
               setIsHargaCustom(false);
+              setMetodeBayar('Tunai');
               setKeterangan('');
               setSelectedWashers([]);
               setSelectedCheckers([]);
@@ -596,7 +719,7 @@ export default function TransactionsPage() {
         {/* Modal: Input / Edit Transaksi */}
         {isModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto">
-            <div className="w-full max-w-xl rounded-2xl bg-white p-6 shadow-2xl border border-slate-200 text-slate-800">
+            <div className="w-full max-w-xl rounded-2xl bg-white p-6 shadow-2xl border border-slate-200 text-slate-800 max-h-[92vh] overflow-y-auto">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
                 <h3 className="text-base font-bold text-[#0A2A5E] flex items-center gap-2">
                   <Receipt className="h-5 w-5 text-[#F97316]" />
@@ -618,23 +741,12 @@ export default function TransactionsPage() {
               )}
 
               <form onSubmit={handleSubmit} className="space-y-4">
+                {/* Tanggal & Nopol Customer */}
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  {/* Tanggal */}
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">Tanggal Transaksi</label>
-                    <input
-                      type="date"
-                      value={tanggal}
-                      onChange={(e) => setTanggal(e.target.value)}
-                      className="w-full rounded-xl border border-slate-300 py-2.5 px-3 text-xs text-slate-800 focus:border-[#0A2A5E] focus:outline-none"
-                      required
-                    />
-                  </div>
-
                   {/* Nopol with Strict Format Validation */}
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      Nomor Polisi (Wajib: HURUF + ANGKA + HURUF)
+                      Nomor Polisi (HURUF + ANGKA + HURUF) <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="text"
@@ -647,6 +759,18 @@ export default function TransactionsPage() {
                       required
                     />
                     {nopolError && <p className="text-[10px] text-red-600 mt-1 font-semibold">{nopolError}</p>}
+                  </div>
+
+                  {/* Tanggal Transaksi */}
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Tanggal Transaksi</label>
+                    <input
+                      type="date"
+                      value={tanggal}
+                      onChange={(e) => setTanggal(e.target.value)}
+                      className="w-full rounded-xl border border-slate-300 py-2.5 px-3 text-xs text-slate-800 focus:border-[#0A2A5E] focus:outline-none"
+                      required
+                    />
                   </div>
                 </div>
 
@@ -696,116 +820,261 @@ export default function TransactionsPage() {
                   </div>
                 )}
 
-                {/* Pilih Paket Layanan from Price List */}
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Pilih Paket Layanan (Price List)</label>
-                  <select
-                    value={selectedPriceId}
-                    onChange={(e) => setSelectedPriceId(e.target.value ? Number(e.target.value) : '')}
-                    className="w-full rounded-xl border border-slate-300 bg-white py-2.5 px-3 text-xs text-slate-800 focus:border-[#0A2A5E] focus:outline-none"
-                    required
-                  >
-                    <option value="">-- Pilih Paket Cuci & Kendaraan --</option>
-                    {prices.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        [{p.kendaraan} - {p.tipe}] {p.paket} | Rp {formatNominal(p.harga)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Price Display & Manual Override */}
-                {currentPrice && (
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 space-y-2">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-slate-600">Fasilitas: <strong className="text-slate-900">{currentPrice.fasilitas}</strong></span>
-                      <span className="text-slate-600">Harga Standar: <strong className="text-slate-900">{formatNominal(currentPrice.harga)}</strong></span>
-                    </div>
-
+                {/* Cascading Dropdowns: Kendaraan -> Paket -> Fasilitas -> Tipe */}
+                <div className="space-y-3 pt-1 border-t border-slate-100">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    {/* 1. KENDARAAN */}
                     <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <label className="text-xs font-semibold text-slate-700">Harga Transaksi (Bisa Di-override / Nego)</label>
-                        {isHargaCustom && (
-                          <span className="rounded bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
-                            Harga Disesuaikan
-                          </span>
-                        )}
-                      </div>
-                      <input
-                        type="text"
-                        value={hargaCustom ? formatNominal(hargaCustom) : ''}
-                        onChange={(e) => {
-                          const val = e.target.value.replace(/[^0-9]/g, '');
-                          setHargaCustom(val);
-                          setIsHargaCustom(Number(val) !== currentPrice.harga);
-                        }}
-                        className="w-full rounded-xl border border-slate-300 bg-white py-2 px-3 text-xs font-bold text-slate-900 focus:border-[#0A2A5E] focus:outline-none"
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        1. Kendaraan <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        value={selectedKendaraan}
+                        onChange={(e) => handleKendaraanChange(e.target.value)}
+                        className="w-full rounded-xl border border-slate-300 bg-white py-2.5 px-3 text-xs font-semibold text-slate-800 focus:border-[#0A2A5E] focus:outline-none"
                         required
-                      />
-                      <p className="text-[10px] text-slate-500 mt-1">
-                        Catatan: Komisi washer/checker tetap dihitung dari harga standar price list, tidak terpengaruh diskon kasir.
-                      </p>
+                      >
+                        <option value="">-- Pilih Kendaraan --</option>
+                        {availableKendaraan.map((kend) => (
+                          <option key={kend} value={kend}>
+                            {kend}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* 2. PAKET */}
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        2. Paket Layanan <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        value={selectedPaket}
+                        onChange={(e) => handlePaketChange(e.target.value)}
+                        disabled={!selectedKendaraan}
+                        className="w-full rounded-xl border border-slate-300 bg-white py-2.5 px-3 text-xs font-semibold text-slate-800 focus:border-[#0A2A5E] focus:outline-none disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
+                        required
+                      >
+                        <option value="">
+                          {!selectedKendaraan ? '-- Pilih Kendaraan Dulu --' : '-- Pilih Paket Layanan --'}
+                        </option>
+                        {availablePaket.map((pkt) => (
+                          <option key={pkt} value={pkt}>
+                            {pkt}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* 3. FASILITAS */}
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        3. Fasilitas <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        value={selectedFasilitas}
+                        onChange={(e) => handleFasilitasChange(e.target.value)}
+                        disabled={!selectedPaket}
+                        className="w-full rounded-xl border border-slate-300 bg-white py-2.5 px-3 text-xs font-semibold text-slate-800 focus:border-[#0A2A5E] focus:outline-none disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
+                        required
+                      >
+                        <option value="">
+                          {!selectedPaket ? '-- Pilih Paket Dulu --' : '-- Pilih Fasilitas --'}
+                        </option>
+                        {availableFasilitas.map((fas) => (
+                          <option key={fas} value={fas}>
+                            {fas}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* 4. TIPE */}
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        4. Tipe Kendaraan <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        value={selectedTipe}
+                        onChange={(e) => handleTipeChange(e.target.value)}
+                        disabled={!selectedFasilitas}
+                        className="w-full rounded-xl border border-slate-300 bg-white py-2.5 px-3 text-xs font-semibold text-slate-800 focus:border-[#0A2A5E] focus:outline-none disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
+                        required
+                      >
+                        <option value="">
+                          {!selectedFasilitas ? '-- Pilih Fasilitas Dulu --' : '-- Pilih Tipe Kendaraan --'}
+                        </option>
+                        {availableTipe.map((tp) => (
+                          <option key={tp} value={tp}>
+                            {tp}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                   </div>
-                )}
 
-                {/* Select Washer & Checker */}
+                  {/* Ringkasan Pilihan: Kendaraan | Paket | Fasilitas | Tipe | Harga */}
+                  {selectedKendaraan && selectedPaket && selectedFasilitas && selectedTipe && currentPrice && (
+                    <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-[#0A2A5E] flex items-center gap-1.5">
+                          <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                          Ringkasan Pilihan
+                        </span>
+                        <span className="text-xs font-extrabold text-[#0A2A5E]">
+                          Rp {formatNominal(currentPrice.harga)}
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-700">
+                        <span className="rounded-md bg-white px-2 py-0.5 font-bold text-[#0A2A5E] border border-blue-200 shadow-xs">
+                          {selectedKendaraan}
+                        </span>
+                        <span className="text-slate-400 font-bold">|</span>
+                        <span className="rounded-md bg-white px-2 py-0.5 font-medium text-slate-800 border border-blue-200 shadow-xs">
+                          {selectedPaket}
+                        </span>
+                        <span className="text-slate-400 font-bold">|</span>
+                        <span className="rounded-md bg-white px-2 py-0.5 text-slate-600 border border-blue-200 shadow-xs text-[11px]">
+                          {selectedFasilitas}
+                        </span>
+                        <span className="text-slate-400 font-bold">|</span>
+                        <span className="rounded-md bg-white px-2 py-0.5 font-bold text-slate-900 border border-blue-200 shadow-xs">
+                          {selectedTipe}
+                        </span>
+                        <span className="text-slate-400 font-bold">|</span>
+                        <span className="rounded-md bg-emerald-100 px-2 py-0.5 font-bold text-emerald-800 border border-emerald-300">
+                          Rp {formatNominal(currentPrice.harga)}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* 5. BIAYA / HARGA (Otomatis & Manual Override) */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-bold text-slate-700">
+                      Biaya / Harga (Rp) <span className="text-red-500">*</span>
+                    </label>
+                    {isHargaCustom && (
+                      <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-[10px] font-bold text-amber-800 border border-amber-300">
+                        Harga disesuaikan
+                      </span>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                      <span className="text-xs font-bold text-slate-500">Rp</span>
+                    </div>
+                    <input
+                      type="text"
+                      disabled={!currentPrice}
+                      placeholder={!currentPrice ? 'Otomatis terisi setelah memilih tipe' : '0'}
+                      value={hargaCustom ? formatNominal(hargaCustom) : ''}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/[^0-9]/g, '');
+                        setHargaCustom(val);
+                        setIsHargaCustom(currentPrice ? Number(val) !== currentPrice.harga : false);
+                      }}
+                      className="w-full rounded-xl border border-slate-300 bg-white py-2.5 pl-9 pr-3 text-sm font-extrabold text-slate-900 focus:border-[#0A2A5E] focus:outline-none disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
+                      required
+                    />
+                  </div>
+                  {currentPrice ? (
+                    <p className="text-[10px] text-slate-500 mt-1">
+                      Harga standar price list: <span className="font-semibold text-slate-700">Rp {formatNominal(currentPrice.harga)}</span>.
+                      {isHargaCustom && (
+                        <span className="text-amber-700 font-medium ml-1">
+                          (Komisi washer & checker tetap dihitung dari standar price list)
+                        </span>
+                      )}
+                    </p>
+                  ) : (
+                    <p className="text-[10px] text-slate-400 mt-1">
+                      Pilih Kendaraan, Paket, Fasilitas, dan Tipe terlebih dahulu untuk menampilkan harga.
+                    </p>
+                  )}
+                </div>
+
+                {/* 6. WASHER & 7. CHECKER */}
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      Petugas Washer (Bisa pilih &gt; 1, komisi dibagi rata + multiplier)
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Petugas Washer <span className="text-red-500">*</span>{' '}
+                      <span className="text-[10px] font-normal text-slate-500">(Bisa pilih &gt; 1, komisi dibagi rata)</span>
                     </label>
                     <div className="max-h-36 overflow-y-auto rounded-xl border border-slate-300 p-2 space-y-1 bg-white">
-                      {availableWashers.map((w) => (
-                        <label key={w.id} className="flex items-center gap-2 p-1.5 hover:bg-slate-50 rounded text-xs cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={selectedWashers.includes(w.id)}
-                            onChange={(e) => {
-                              if (e.target.checked) setSelectedWashers([...selectedWashers, w.id]);
-                              else setSelectedWashers(selectedWashers.filter((id) => id !== w.id));
-                            }}
-                            className="rounded border-slate-300 text-[#0A2A5E] focus:ring-[#0A2A5E]"
-                          />
-                          <span className="font-medium text-slate-800">{w.nama}</span>
-                          <span className="text-[10px] text-slate-400">({w.role})</span>
-                        </label>
-                      ))}
+                      {availableWashers.length === 0 ? (
+                        <p className="text-xs text-slate-400 p-2">Tidak ada washer aktif</p>
+                      ) : (
+                        availableWashers.map((w) => (
+                          <label
+                            key={w.id}
+                            className={`flex items-center gap-2.5 p-2 rounded-lg text-xs cursor-pointer transition-colors ${
+                              selectedWashers.includes(w.id) ? 'bg-blue-50/80 border border-blue-200' : 'hover:bg-slate-50'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selectedWashers.includes(w.id)}
+                              onChange={(e) => {
+                                if (e.target.checked) setSelectedWashers([...selectedWashers, w.id]);
+                                else setSelectedWashers(selectedWashers.filter((id) => id !== w.id));
+                              }}
+                              className="h-4 w-4 rounded border-slate-300 text-[#0A2A5E] focus:ring-[#0A2A5E]"
+                            />
+                            <span className="font-semibold text-slate-800">{w.nama}</span>
+                            <span className="text-[10px] text-slate-400">({w.role})</span>
+                          </label>
+                        ))
+                      )}
                     </div>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      Petugas Checker (Opsional, bagi rata komisi checker)
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Petugas Checker <span className="text-[10px] font-normal text-slate-500">(Opsional)</span>
                     </label>
                     <div className="max-h-36 overflow-y-auto rounded-xl border border-slate-300 p-2 space-y-1 bg-white">
-                      {availableCheckers.map((c) => (
-                        <label key={c.id} className="flex items-center gap-2 p-1.5 hover:bg-slate-50 rounded text-xs cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={selectedCheckers.includes(c.id)}
-                            onChange={(e) => {
-                              if (e.target.checked) setSelectedCheckers([...selectedCheckers, c.id]);
-                              else setSelectedCheckers(selectedCheckers.filter((id) => id !== c.id));
-                            }}
-                            className="rounded border-slate-300 text-[#0A2A5E] focus:ring-[#0A2A5E]"
-                          />
-                          <span className="font-medium text-slate-800">{c.nama}</span>
-                          <span className="text-[10px] text-slate-400">({c.role})</span>
-                        </label>
-                      ))}
+                      {availableCheckers.length === 0 ? (
+                        <p className="text-xs text-slate-400 p-2">Tidak ada checker aktif</p>
+                      ) : (
+                        availableCheckers.map((c) => (
+                          <label
+                            key={c.id}
+                            className={`flex items-center gap-2.5 p-2 rounded-lg text-xs cursor-pointer transition-colors ${
+                              selectedCheckers.includes(c.id) ? 'bg-blue-50/80 border border-blue-200' : 'hover:bg-slate-50'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selectedCheckers.includes(c.id)}
+                              onChange={(e) => {
+                                if (e.target.checked) setSelectedCheckers([...selectedCheckers, c.id]);
+                                else setSelectedCheckers(selectedCheckers.filter((id) => id !== c.id));
+                              }}
+                              className="h-4 w-4 rounded border-slate-300 text-[#0A2A5E] focus:ring-[#0A2A5E]"
+                            />
+                            <span className="font-semibold text-slate-800">{c.nama}</span>
+                            <span className="text-[10px] text-slate-400">({c.role})</span>
+                          </label>
+                        ))
+                      )}
                     </div>
                   </div>
                 </div>
 
-                {/* Metode Bayar & Keterangan */}
+                {/* 8. METODE PEMBAYARAN & 9. KETERANGAN */}
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">Metode Pembayaran</label>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Metode Pembayaran <span className="text-red-500">*</span>
+                    </label>
                     <select
                       value={metodeBayar}
                       onChange={(e) => setMetodeBayar(e.target.value as any)}
-                      className="w-full rounded-xl border border-slate-300 bg-white py-2.5 px-3 text-xs text-slate-800 focus:border-[#0A2A5E] focus:outline-none"
+                      className="w-full rounded-xl border border-slate-300 bg-white py-2.5 px-3 text-xs font-semibold text-slate-800 focus:border-[#0A2A5E] focus:outline-none"
+                      required
                     >
                       <option value="Tunai">Tunai</option>
                       <option value="Qris">QRIS</option>
@@ -815,10 +1084,12 @@ export default function TransactionsPage() {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">Keterangan Tambahan (Opsional)</label>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Keterangan <span className="text-[10px] font-normal text-slate-500">(Opsional)</span>
+                    </label>
                     <input
                       type="text"
-                      placeholder="Catatan khusus..."
+                      placeholder="Catatan khusus transaksi..."
                       value={keterangan}
                       onChange={(e) => setKeterangan(e.target.value)}
                       className="w-full rounded-xl border border-slate-300 py-2.5 px-3 text-xs text-slate-800 focus:border-[#0A2A5E] focus:outline-none"
@@ -826,18 +1097,19 @@ export default function TransactionsPage() {
                   </div>
                 </div>
 
-                <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                {/* 10. SIMPAN TRANSAKSI */}
+                <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-slate-100">
                   <button
                     type="button"
                     onClick={() => setIsModalOpen(false)}
-                    className="rounded-xl border border-slate-300 px-4 py-2.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                    className="rounded-xl border border-slate-300 px-4 py-2.5 text-xs font-medium text-slate-700 hover:bg-slate-100 transition-colors"
                   >
                     Batal
                   </button>
                   <button
                     type="submit"
-                    disabled={submitting}
-                    className="rounded-xl bg-[#F97316] px-5 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-[#EA580C] disabled:opacity-50"
+                    disabled={submitting || !currentPrice || selectedWashers.length === 0}
+                    className="rounded-xl bg-[#F97316] px-5 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-[#EA580C] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
                     {submitting ? 'Menyimpan...' : editTrx ? 'Simpan Perubahan' : 'Simpan Transaksi'}
                   </button>
