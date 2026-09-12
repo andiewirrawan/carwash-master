@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, use } from 'react';
+import React, { useState, useEffect, useCallback, use } from 'react';
 import { AdminLayout } from '@/components/layout/AdminLayout';
 import { useAuth } from '@/context/AuthContext';
 import { Staff, StaffKomisiMultiplier } from '@/types/database';
@@ -50,7 +50,7 @@ export default function StaffMultiplierPage({
   const [testDateInput, setTestDateInput] = useState<string>(toInputDate(new Date()));
   const [effectiveTestResult, setEffectiveTestResult] = useState<number>(0);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     const staffAll = await getStaffList();
     const currentStaff = staffAll.find((s) => s.id === staffId);
@@ -63,13 +63,13 @@ export default function StaffMultiplierPage({
     setEffectiveTestResult(eff);
 
     setLoading(false);
-  };
+  }, [staffId, testDateInput]);
 
   useEffect(() => {
     if (!isNaN(staffId)) {
       loadData();
     }
-  }, [staffId]);
+  }, [staffId, loadData]);
 
   const handleTestDateChange = async (dateStr: string) => {
     setTestDateInput(dateStr);

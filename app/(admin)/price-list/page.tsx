@@ -192,7 +192,7 @@ export default function PriceListPage() {
               CRUD Price List (Daftar Harga)
             </h1>
             <p className="text-xs text-slate-500 mt-1">
-              Kelola daftar paket cuci, fasilitas, tipe kendaraan, harga (titik ribuan, tanpa "Rp"), dan alokasi komisi.
+              Kelola daftar paket cuci, fasilitas, tipe kendaraan, harga (titik ribuan, tanpa &quot;Rp&quot;), dan alokasi komisi.
             </p>
           </div>
 
@@ -469,7 +469,7 @@ export default function PriceListPage() {
 
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">
-                    Harga Paket (tanpa "Rp", otomatis format ribuan)
+                    Harga Paket (tanpa &quot;Rp&quot;, otomatis format ribuan)
                   </label>
                   <input
                     type="text"

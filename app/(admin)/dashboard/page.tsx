@@ -92,7 +92,7 @@ export default function DashboardPage() {
               </p>
               <p className="font-semibold text-white flex items-center gap-1.5">
                 <Database className="h-3.5 w-3.5 text-emerald-300" />
-                Nominal: tanpa "Rp" (200.000)
+                Nominal: tanpa &quot;Rp&quot; (200.000)
               </p>
             </div>
           </div>
