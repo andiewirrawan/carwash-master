@@ -25,6 +25,12 @@ import {
   HardDrive,
   Home,
   CheckCircle2,
+  Receipt,
+  FileSpreadsheet,
+  Award,
+  TrendingUp,
+  CreditCard,
+  Contact,
 } from 'lucide-react';
 
 interface MenuItem {
@@ -43,7 +49,8 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [expandedMenus, setExpandedMenus] = useState<Record<string, boolean>>({
-    'Master Data': true, // expanded by default
+    'Laporan & Keuangan': true,
+    'Master Data': false,
   });
   const [showNotifications, setShowNotifications] = useState<boolean>(false);
 
@@ -75,9 +82,37 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 
   const menuList: MenuItem[] = [
     {
-      title: 'Dashboard',
+      title: 'Dashboard Owner',
       href: '/dashboard',
       icon: LayoutDashboard,
+      minRole: 'spv',
+    },
+    {
+      title: 'Transaksi Kasir',
+      href: '/transactions',
+      icon: Receipt,
+      minRole: 'admin',
+    },
+    {
+      title: 'Data Customer',
+      href: '/customers',
+      icon: Contact,
+      minRole: 'admin',
+    },
+    {
+      title: 'Daftar Piutang',
+      href: '/piutang',
+      icon: CreditCard,
+      minRole: 'admin',
+    },
+    {
+      title: 'Laporan & Keuangan',
+      icon: TrendingUp,
+      minRole: 'spv',
+      subItems: [
+        { title: 'Komisi Washer', href: '/komisi-washer', icon: Award, minRole: 'spv' },
+        { title: 'Laporan Bulanan', href: '/laporan-bulanan', icon: FileSpreadsheet, minRole: 'spv' },
+      ],
     },
     {
       title: 'Master Data',
@@ -109,6 +144,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
     },
   ];
 
+
   // Filter menu based on search box & roles
   const filteredMenus = menuList
     .filter((menu) => !menu.minRole || hasAccess(menu.minRole))
@@ -135,7 +171,13 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 
   // Breadcrumb generator
   const getBreadcrumbs = () => {
-    if (pathname === '/dashboard') return ['Home', 'Dashboard'];
+    if (pathname === '/dashboard') return ['Home', 'Dashboard Owner'];
+    if (pathname === '/transactions') return ['Home', 'Transaksi Kasir'];
+    if (pathname === '/customers') return ['Home', 'Data Customer'];
+    if (pathname.startsWith('/customers/')) return ['Home', 'Data Customer', 'Detail Customer & Riwayat Plat'];
+    if (pathname === '/piutang') return ['Home', 'Daftar Piutang'];
+    if (pathname === '/komisi-washer') return ['Home', 'Laporan & Keuangan', 'Komisi Washer'];
+    if (pathname === '/laporan-bulanan') return ['Home', 'Laporan & Keuangan', 'Laporan Bulanan'];
     if (pathname === '/price-list') return ['Home', 'Master Data', 'Daftar Harga'];
     if (pathname === '/vehicles') return ['Home', 'Master Data', 'Kategori Kendaraan'];
     if (pathname === '/staff') return ['Home', 'Master Data', 'Data Staff'];

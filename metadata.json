@@ -1,6 +1,7 @@
 {
   "name": "Carwash Master",
-  "description": "Sistem Kasir BSA Car Wash - Kelola Master Data, Staff, Komisi Multiplier, & User",
+  "description": "Sistem Kasir BSA Car Wash - Dashboard Owner, Komisi Washer, Data Customer, Riwayat Ganti Nopol, Manajemen Piutang & Pelunasan, Master Data & Multiplier",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
+

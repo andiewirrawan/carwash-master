@@ -56,6 +56,66 @@ export function formatDate(dateInput: string | Date | null | undefined): string 
   }
 }
 
+// Aliases for convenience
+export const formatRupiah = formatNominal;
+export const formatDateID = formatDate;
+
+/**
+ * Format date to short day/month for charts (e.g., "12/09")
+ */
+export function formatChartDate(dateInput: string | Date | null | undefined): string {
+  if (!dateInput) return '';
+  try {
+    let dateObj: Date;
+    if (typeof dateInput === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateInput)) {
+      const [y, m, d] = dateInput.split('-').map(Number);
+      dateObj = new Date(y, m - 1, d);
+    } else {
+      dateObj = new Date(dateInput as any);
+    }
+    if (isNaN(dateObj.getTime())) return String(dateInput);
+    const day = String(dateObj.getDate()).padStart(2, '0');
+    const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+    return `${day}/${month}`;
+  } catch {
+    return String(dateInput);
+  }
+}
+
+/**
+ * Format month-year display (e.g. "September 2026" or "09/2026")
+ */
+export function formatMonthYear(dateInput: string | Date | null | undefined): string {
+  if (!dateInput) return '-';
+  try {
+    let dateObj: Date;
+    if (typeof dateInput === 'string') {
+      if (/^\d{4}-\d{2}$/.test(dateInput)) {
+        const [y, m] = dateInput.split('-').map(Number);
+        dateObj = new Date(y, m - 1, 1);
+      } else if (/^\d{4}-\d{2}-\d{2}$/.test(dateInput)) {
+        const [y, m, d] = dateInput.split('-').map(Number);
+        dateObj = new Date(y, m - 1, d);
+      } else {
+        dateObj = new Date(dateInput);
+      }
+    } else {
+      dateObj = dateInput;
+    }
+
+    if (isNaN(dateObj.getTime())) return String(dateInput);
+
+    const monthNames = [
+      'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+      'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+    ];
+
+    return `${monthNames[dateObj.getMonth()]} ${dateObj.getFullYear()}`;
+  } catch {
+    return String(dateInput);
+  }
+}
+
 /**
  * Format date to input string YYYY-MM-DD (for HTML <input type="date">)
  */

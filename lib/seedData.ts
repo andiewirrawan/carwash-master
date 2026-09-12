@@ -1,4 +1,12 @@
-import { VehicleCategory, PriceList, Staff, StaffKomisiMultiplier, User } from '@/types/database';
+import {
+  VehicleCategory,
+  PriceList,
+  Staff,
+  StaffKomisiMultiplier,
+  User,
+  Transaction,
+  TransactionStaff,
+} from '@/types/database';
 
 export const initialVehicleCategories: VehicleCategory[] = [
   { id: 1, kendaraan: 'Mobil', merk: 'Toyota', model: 'Avanza / Xenia / Ertiga', tipe: 'Medium', kategori: 1 },
@@ -157,3 +165,105 @@ export const initialUsers: User[] = [
     created_at: '2025-01-01T00:00:00Z',
   },
 ];
+
+// Seed generator for realistic past 30 days transactions (2026-08-14 to 2026-09-12)
+function generateSeedTransactions(): { transactions: Transaction[]; transactionStaff: TransactionStaff[] } {
+  const transactions: Transaction[] = [];
+  const transactionStaff: TransactionStaff[] = [];
+  let trxId = 1;
+  let staffTrxId = 1;
+
+  const sampleCars = [
+    { nopol: 'B 1234 BSA', kend: 'Mobil', tipe: 'Medium', paketId: 2, paket: 'Cuci Body + Semir', harga: 50000, wKomisi: 10000, cKomisi: 5000 },
+    { nopol: 'B 8888 RIT', kend: 'Mobil', tipe: 'Large', paketId: 3, paket: 'Cuci Body + Semir', harga: 65000, wKomisi: 13000, cKomisi: 6000 },
+    { nopol: 'D 1902 AC', kend: 'Mobil', tipe: 'Medium', paketId: 4, paket: 'Cuci Salju + Wax Coating', harga: 120000, wKomisi: 25000, cKomisi: 12000 },
+    { nopol: 'B 4567 XYZ', kend: 'Mobil', tipe: 'Small', paketId: 1, paket: 'Cuci Body + Semir', harga: 40000, wKomisi: 8000, cKomisi: 4000 },
+    { nopol: 'B 3321 MOT', kend: 'Motor', tipe: 'Small', paketId: 5, paket: 'Cuci Regular', harga: 15000, wKomisi: 3000, cKomisi: 1500 },
+    { nopol: 'B 6789 NMX', kend: 'Motor', tipe: 'Medium', paketId: 6, paket: 'Cuci Regular + Detail', harga: 30000, wKomisi: 6000, cKomisi: 3000 },
+  ];
+
+  const washers = [
+    { id: 1, nama: 'Topa', multiplier: 0 },
+    { id: 2, nama: 'Budi Santoso', multiplier: 5 },
+  ];
+  const checker = { id: 3, nama: 'Agus Prayitno', multiplier: 0 };
+
+  // Generate for 30 days back from 2026-09-12
+  const endDate = new Date(2026, 8, 12); // Sept 12 2026
+
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date(endDate);
+    d.setDate(d.getDate() - i);
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const dateStr = `${yyyy}-${mm}-${dd}`;
+
+    // Number of transactions per day (between 6 and 14)
+    const daySeed = (d.getDate() * 3 + d.getDay() * 7) % 7;
+    const trxCount = 7 + daySeed;
+
+    for (let t = 0; t < trxCount; t++) {
+      const carIndex = (t + daySeed) % sampleCars.length;
+      const car = sampleCars[carIndex];
+      const methodChoice = (t + daySeed) % 10;
+      const metode_bayar: 'Tunai' | 'Qris' | 'Piutang' =
+        methodChoice < 6 ? 'Tunai' : methodChoice < 9 ? 'Qris' : 'Piutang';
+
+      const no_transaksi = `TRX-${yyyy}${mm}${dd}-${String(t + 1).padStart(3, '0')}`;
+      const washer = washers[t % washers.length];
+
+      // Calculate washer commission with multiplier
+      const calculatedWasherKomisi = Math.round(car.wKomisi * (1 + washer.multiplier / 100));
+
+      const trx: Transaction = {
+        id: trxId,
+        no_transaksi,
+        tanggal: dateStr,
+        no_polisi: `${car.nopol.split(' ')[0]} ${parseInt(car.nopol.split(' ')[1], 10) + t} ${car.nopol.split(' ')[2]}`,
+        kendaraan: car.kend,
+        tipe: car.tipe,
+        paket_nama: car.paket,
+        harga: car.harga,
+        metode_bayar,
+        status: 'aktif',
+        created_by: 'Kasir Admin 1',
+        created_by_nama: 'Kasir Admin 1',
+        created_at: `${dateStr}T${String(8 + (t % 10)).padStart(2, '0')}:${String((t * 12) % 60).padStart(2, '0')}:00Z`,
+      };
+      transactions.push(trx);
+
+      // Assigned Washer
+      transactionStaff.push({
+        id: staffTrxId++,
+        transaction_id: trxId,
+        staff_id: washer.id,
+        staff_nama: washer.nama,
+        role: 'washer',
+        komisi: calculatedWasherKomisi,
+        multiplier: washer.multiplier,
+      });
+
+      // Assigned Checker (for cars)
+      if (car.kend === 'Mobil') {
+        transactionStaff.push({
+          id: staffTrxId++,
+          transaction_id: trxId,
+          staff_id: checker.id,
+          staff_nama: checker.nama,
+          role: 'checker',
+          komisi: car.cKomisi,
+          multiplier: 0,
+        });
+      }
+
+      trxId++;
+    }
+  }
+
+  return { transactions, transactionStaff };
+}
+
+const seedDataGenerated = generateSeedTransactions();
+export const initialTransactions: Transaction[] = seedDataGenerated.transactions;
+export const initialTransactionStaff: TransactionStaff[] = seedDataGenerated.transactionStaff;

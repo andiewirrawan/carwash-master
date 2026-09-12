@@ -42,7 +42,7 @@ export default function StaffPage() {
 
   // Form states
   const [nama, setNama] = useState<string>('');
-  const [role, setRole] = useState<StaffRole>('washer');
+  const [role, setRole] = useState<StaffRole | string>('washer');
   const [aktif, setAktif] = useState<boolean>(true);
   const [formError, setFormError] = useState<string>('');
   const [saving, setSaving] = useState<boolean>(false);
