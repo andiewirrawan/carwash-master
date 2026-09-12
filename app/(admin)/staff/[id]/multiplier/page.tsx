@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, use } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { AdminLayout } from '@/components/layout/AdminLayout';
 import { useAuth } from '@/context/AuthContext';
 import { Staff, StaffKomisiMultiplier } from '@/types/database';
@@ -12,6 +12,7 @@ import {
 } from '@/lib/db';
 import { formatDate, toInputDate } from '@/lib/format';
 import Link from 'next/link';
+import { useParams } from 'next/navigation';
 import {
   Percent,
   Plus,
@@ -24,13 +25,10 @@ import {
   Info,
 } from 'lucide-react';
 
-export default function StaffMultiplierPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  const resolvedParams = use(params);
-  const staffId = parseInt(resolvedParams.id, 10);
+export default function StaffMultiplierPage() {
+  const routeParams = useParams();
+  const rawId = Array.isArray(routeParams?.id) ? routeParams.id[0] : routeParams?.id;
+  const staffId = rawId ? parseInt(rawId, 10) : NaN;
 
   const { user, hasAccess } = useAuth();
   const canEdit = hasAccess('admin');

@@ -10,14 +10,16 @@ export default function GlobalError({
   reset: () => void;
 }) {
   useEffect(() => {
-    console.error('App error:', error);
+    if (error && error.message) {
+      console.error('App error:', error.message);
+    }
   }, [error]);
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-slate-900 px-4 text-center text-white">
       <h2 className="text-2xl font-bold text-red-500">Terjadi Kesalahan Sistem</h2>
       <p className="mt-2 text-sm text-slate-400">
-        {error.message || 'Silakan coba muat ulang halaman ini.'}
+        {error?.message || 'Silakan coba muat ulang halaman ini.'}
       </p>
       <button
         onClick={() => reset()}
