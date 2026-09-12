@@ -6,6 +6,7 @@ import {
   User,
   Transaction,
   TransactionStaff,
+  Attendance,
 } from '@/types/database';
 
 export const initialVehicleCategories: VehicleCategory[] = [
@@ -267,3 +268,62 @@ function generateSeedTransactions(): { transactions: Transaction[]; transactionS
 const seedDataGenerated = generateSeedTransactions();
 export const initialTransactions: Transaction[] = seedDataGenerated.transactions;
 export const initialTransactionStaff: TransactionStaff[] = seedDataGenerated.transactionStaff;
+
+// Seed generator for Attendance (from 2026-08-01 to 2026-09-12)
+function generateSeedAttendance(): Attendance[] {
+  const attendanceList: Attendance[] = [];
+  let id = 1;
+
+  // Active staff
+  const staffMembers = [
+    { id: 1, nama: 'Topa', role: 'washer' },
+    { id: 2, nama: 'Budi Santoso', role: 'washer' },
+    { id: 3, nama: 'Agus Prayitno', role: 'checker' },
+    { id: 4, nama: 'Rudi Hermawan', role: 'leader' },
+  ];
+
+  // Specific absence overrides (for realistic patterns)
+  const exceptions: Record<string, Record<number, 'Izin' | 'Sakit' | 'Alpha'>> = {
+    '2026-08-05': { 2: 'Izin' },
+    '2026-08-11': { 1: 'Sakit' },
+    '2026-08-18': { 3: 'Izin' },
+    '2026-08-22': { 1: 'Alpha' },
+    '2026-08-27': { 4: 'Izin' },
+    '2026-09-02': { 3: 'Alpha' },
+    '2026-09-04': { 1: 'Izin' },
+    '2026-09-08': { 2: 'Sakit' },
+    '2026-09-11': { 3: 'Izin' },
+  };
+
+  // Generate for August 1 to September 12, 2026
+  const startDate = new Date(2026, 7, 1); // 2026-08-01
+  const endDate = new Date(2026, 8, 12); // 2026-09-12
+
+  for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const dateStr = `${yyyy}-${mm}-${dd}`;
+
+    for (const staff of staffMembers) {
+      let status: 'Hadir' | 'Izin' | 'Sakit' | 'Alpha' = 'Hadir';
+
+      if (exceptions[dateStr] && exceptions[dateStr][staff.id]) {
+        status = exceptions[dateStr][staff.id];
+      }
+
+      attendanceList.push({
+        id: id++,
+        staff_id: staff.id,
+        tanggal: dateStr,
+        status,
+        staff_nama: staff.nama,
+        staff_role: staff.role,
+      });
+    }
+  }
+
+  return attendanceList;
+}
+
+export const initialAttendance: Attendance[] = generateSeedAttendance();

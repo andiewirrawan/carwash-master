@@ -1,6 +1,6 @@
 {
   "name": "Carwash Master",
-  "description": "Sistem Kasir BSA Car Wash - Dashboard Owner, Komisi Washer, Data Customer, Riwayat Ganti Nopol, Manajemen Piutang & Pelunasan, Master Data & Multiplier",
+  "description": "Sistem Kasir & Operasional BSA Car Wash - Dashboard Owner, Transaksi Kasir, Data Customer & Nopol History, Absensi Harian & Rekap Bulanan, Insentif Mingguan (Komisi Cuci + Manual) & Export Excel",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

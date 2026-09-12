@@ -177,3 +177,29 @@ export interface SessionUser {
   nama: string;
   role: Role;
 }
+
+// Attendance (Tahap 5)
+export type AttendanceStatus = 'Hadir' | 'Izin' | 'Sakit' | 'Alpha';
+
+export interface Attendance {
+  id: number;
+  staff_id: number;
+  tanggal: string; // YYYY-MM-DD
+  status: AttendanceStatus;
+  staff_nama?: string;
+  staff_role?: string;
+}
+
+// Weekly Incentive Breakdown (Tahap 5)
+export interface StaffWeeklyIncentive {
+  staff_id: number;
+  nama: string;
+  role: string;
+  multiplier: number;
+  hari_hadir: number;
+  total_unit_cuci: number;
+  komisi_cuci: number;
+  komisi_manual: number;
+  rincian_manual: KomisiManual[];
+  total_insentif: number;
+}

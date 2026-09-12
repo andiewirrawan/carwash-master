@@ -31,6 +31,9 @@ import {
   TrendingUp,
   CreditCard,
   Contact,
+  CalendarDays,
+  Banknote,
+  Sparkles,
 } from 'lucide-react';
 
 interface MenuItem {
@@ -49,6 +52,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [expandedMenus, setExpandedMenus] = useState<Record<string, boolean>>({
+    'Absensi Staff': true,
     'Laporan & Keuangan': true,
     'Master Data': false,
   });
@@ -106,11 +110,22 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
       minRole: 'admin',
     },
     {
+      title: 'Absensi Staff',
+      icon: UserCheck,
+      minRole: 'admin',
+      subItems: [
+        { title: 'Absensi Harian', href: '/absensi', icon: UserCheck, minRole: 'admin' },
+        { title: 'Rekap Bulanan', href: '/rekap-absensi', icon: CalendarDays, minRole: 'admin' },
+      ],
+    },
+    {
       title: 'Laporan & Keuangan',
       icon: TrendingUp,
       minRole: 'spv',
       subItems: [
+        { title: 'Insentif Mingguan', href: '/insentif-mingguan', icon: Banknote, minRole: 'spv' },
         { title: 'Komisi Washer', href: '/komisi-washer', icon: Award, minRole: 'spv' },
+        { title: 'Komisi Manual', href: '/komisi-manual', icon: Sparkles, minRole: 'admin' },
         { title: 'Laporan Bulanan', href: '/laporan-bulanan', icon: FileSpreadsheet, minRole: 'spv' },
       ],
     },

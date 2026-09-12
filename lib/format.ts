@@ -135,3 +135,52 @@ export function toInputDate(dateInput: string | Date | null | undefined): string
     return new Date().toISOString().split('T')[0];
   }
 }
+
+/**
+ * Returns Monday and Sunday for the week of the given date (Senin - Minggu)
+ */
+export function getMondayAndSundayOfWeek(dateInput?: string | Date): { monday: string; sunday: string } {
+  let d: Date;
+  if (!dateInput) {
+    d = new Date();
+  } else if (typeof dateInput === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateInput)) {
+    const [y, m, day] = dateInput.split('-').map(Number);
+    d = new Date(y, m - 1, day);
+  } else {
+    d = new Date(dateInput);
+  }
+
+  const dayOfWeek = d.getDay(); // 0 is Sunday, 1 is Monday...
+  const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+
+  const mon = new Date(d);
+  mon.setDate(d.getDate() + diffToMonday);
+
+  const sun = new Date(mon);
+  sun.setDate(mon.getDate() + 6);
+
+  return {
+    monday: toInputDate(mon),
+    sunday: toInputDate(sun),
+  };
+}
+
+/**
+ * Get Indonesian day name
+ */
+export function getIndonesianDayName(dateInput: string | Date): string {
+  try {
+    let d: Date;
+    if (typeof dateInput === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateInput)) {
+      const [y, m, day] = dateInput.split('-').map(Number);
+      d = new Date(y, m - 1, day);
+    } else {
+      d = new Date(dateInput);
+    }
+    const days = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+    return days[d.getDay()] || '';
+  } catch {
+    return '';
+  }
+}
+

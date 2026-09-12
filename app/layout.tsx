@@ -5,16 +5,16 @@ import { ClientErrorSafeguard } from '@/components/ClientErrorSafeguard';
 
 export const metadata: Metadata = {
   title: 'Carwash Master - BSA Car Wash',
-  description: 'Sistem Kasir BSA Car Wash - Dashboard Owner, Grafik Omzet Recharts, Komisi Washer, Laporan Bulanan Excel, Master Data & Multiplier',
+  description: 'Sistem Kasir & Operasional BSA Car Wash - Dashboard Owner, Transaksi Kasir, Data Customer & Nopol History, Absensi Harian & Rekap Bulanan, Insentif Mingguan (Komisi Cuci + Manual) & Export Excel',
   openGraph: {
     title: 'Carwash Master - BSA Car Wash',
-    description: 'Sistem Kasir BSA Car Wash - Dashboard Owner, Grafik Omzet Recharts, Komisi Washer, Laporan Bulanan Excel, Master Data & Multiplier',
+    description: 'Sistem Kasir & Operasional BSA Car Wash - Dashboard Owner, Transaksi Kasir, Data Customer & Nopol History, Absensi Harian & Rekap Bulanan, Insentif Mingguan (Komisi Cuci + Manual) & Export Excel',
     type: 'website',
   },
   twitter: {
     card: 'summary_large_image',
     title: 'Carwash Master - BSA Car Wash',
-    description: 'Sistem Kasir BSA Car Wash - Dashboard Owner, Grafik Omzet Recharts, Komisi Washer, Laporan Bulanan Excel, Master Data & Multiplier',
+    description: 'Sistem Kasir & Operasional BSA Car Wash - Dashboard Owner, Transaksi Kasir, Data Customer & Nopol History, Absensi Harian & Rekap Bulanan, Insentif Mingguan (Komisi Cuci + Manual) & Export Excel',
   },
 };
 
