@@ -1,0 +1,31 @@
+const { createClient } = require('@supabase/supabase-js');
+
+const supabaseUrl = 'https://rcwtfkwksyzssppnnsdh.supabase.co';
+const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJjd3Rma3drc3l6c3NwcG5uc2RoIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4OTI0OTk3OSwiZXhwIjoyMTA0ODI1OTc5fQ.CJ_h2KA7aum2ZhlhYImGPZFEKoOyeh1qefIDKYWYtsc';
+
+const supabase = createClient(supabaseUrl, supabaseKey);
+
+async function migrate() {
+    console.log('Migrating multiplier...');
+    const { data: dbStaff } = await supabase.from('staff').select('*');
+    const { data: wiroUser } = await supabase.from('users').select('*').eq('username', 'wiro').single();
+    
+    if (wiroUser && dbStaff) {
+      for (const s of dbStaff) {
+        if (s.nama === 'Topa') {
+          const r1 = await supabase.from('staff_komisi_multiplier').insert({ staff_id: s.id, multiplier: 0, berlaku_mulai: '2025-01-01', dientry_oleh: wiroUser.id });
+          console.log(r1.error);
+          const r2 = await supabase.from('staff_komisi_multiplier').insert({ staff_id: s.id, multiplier: 10, berlaku_mulai: '2026-12-01', dientry_oleh: wiroUser.id });
+          console.log(r2.error);
+        } else if (s.nama === 'Budi Santoso') {
+          const r3 = await supabase.from('staff_komisi_multiplier').insert({ staff_id: s.id, multiplier: 5, berlaku_mulai: '2026-01-01', dientry_oleh: wiroUser.id });
+          console.log(r3.error);
+        } else if (s.nama === 'Agus Prayitno') {
+          const r4 = await supabase.from('staff_komisi_multiplier').insert({ staff_id: s.id, multiplier: 0, berlaku_mulai: '2025-06-01', dientry_oleh: wiroUser.id });
+          console.log(r4.error);
+        }
+      }
+    }
+    console.log('Multiplier done.');
+}
+migrate();
