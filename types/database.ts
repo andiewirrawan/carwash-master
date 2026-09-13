@@ -90,6 +90,8 @@ export interface Transaction {
   keterangan?: string | null;
   kasir_id?: number | null;
   status: 'aktif' | 'void' | 'batal';
+  status_pengerjaan?: 'proses' | 'selesai';
+  waktu_selesai?: string | null;
   created_at?: string;
   // Helpers for UI display
   no_transaksi?: string;
