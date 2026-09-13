@@ -4,12 +4,11 @@ import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
 import { Customer } from '@/types/database';
-import { getCustomers, addCustomer } from '@/lib/db';
+import { getCustomers } from '@/lib/db';
 import { formatRupiah, formatDateID } from '@/lib/format';
 import {
   Users,
   Search,
-  Plus,
   ArrowUpDown,
   Car,
   Award,
@@ -18,7 +17,6 @@ import {
   Phone,
   Filter,
   CheckCircle2,
-  AlertCircle,
   X,
   ExternalLink,
 } from 'lucide-react';
@@ -31,16 +29,6 @@ export default function CustomersPage() {
   const [tierFilter, setTierFilter] = useState<'all' | 'reguler' | 'gold'>('all');
   const [sortBy, setSortBy] = useState<'kunjungan' | 'omzet' | 'nama' | 'nopol'>('kunjungan');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
-
-  // Modal Add Customer
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [newNopol, setNewNopol] = useState('');
-  const [newNama, setNewNama] = useState('');
-  const [newHp, setNewHp] = useState('');
-  const [newKendaraan, setNewKendaraan] = useState<'Mobil' | 'Motor'>('Mobil');
-  const [modalError, setModalError] = useState('');
-  const [modalSuccess, setModalSuccess] = useState('');
-  const [submitting, setSubmitting] = useState(false);
 
   const loadCustomers = useCallback(async () => {
     setLoading(true);
@@ -91,58 +79,6 @@ export default function CustomersPage() {
   const totalKunjungan = customers.reduce((acc, c) => acc + (c.total_kunjungan || 0), 0);
   const totalOmzet = customers.reduce((acc, c) => acc + (c.total_omzet || 0), 0);
 
-  const handleAddCustomer = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setModalError('');
-    setModalSuccess('');
-
-    // Format validation: HURUF spasi ANGKA spasi HURUF
-    const nopolRegex = /^[A-Z]{1,2}\s\d{1,4}\s[A-Z]{1,3}$/i;
-    const cleanNopol = newNopol.trim().toUpperCase().replace(/\s+/g, ' ');
-
-    if (!nopolRegex.test(cleanNopol)) {
-      setModalError('Format plat nomor harus berupa: HURUF spasi ANGKA spasi HURUF (contoh: B 1234 BSA)');
-      return;
-    }
-
-    // Check duplicate
-    const exists = customers.some((c) => c.nopol.toUpperCase() === cleanNopol);
-    if (exists) {
-      setModalError(`Plat nomor ${cleanNopol} sudah terdaftar dalam sistem.`);
-      return;
-    }
-
-    setSubmitting(true);
-    try {
-      await addCustomer({
-        nopol: cleanNopol,
-        nama: newNama.trim() || undefined,
-        hp: newHp.trim() || undefined,
-        kendaraan: newKendaraan,
-        tier: 'reguler',
-        created_at: new Date().toISOString(),
-      });
-      setModalSuccess(`Customer dengan plat ${cleanNopol} berhasil didaftarkan!`);
-      setTimeout(() => {
-        setShowAddModal(false);
-        setNewNopol('');
-        setNewNama('');
-        setNewHp('');
-        setModalSuccess('');
-        loadCustomers();
-      }, 1000);
-    } catch (err: any) {
-      setModalError(err?.message || 'Gagal menyimpan customer.');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleNopolInputChange = (val: string) => {
-    // Auto-uppercase
-    setNewNopol(val.toUpperCase());
-  };
-
   return (
     <div id="customers-page" className="space-y-6">
       {/* Header */}
@@ -157,20 +93,10 @@ export default function CustomersPage() {
         </div>
 
         <div className="flex items-center gap-3">
-          {hasAccess('admin') && (
-            <button
-              id="btn-add-customer"
-              onClick={() => {
-                setModalError('');
-                setModalSuccess('');
-                setShowAddModal(true);
-              }}
-              className="inline-flex items-center gap-2 rounded-xl bg-[#0A2A5E] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#08224d]"
-            >
-              <Plus className="h-4 w-4" />
-              <span>Tambah Customer</span>
-            </button>
-          )}
+          <div className="flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50/60 px-3.5 py-2 text-xs text-blue-900">
+            <CheckCircle2 className="h-4 w-4 shrink-0 text-[#0A2A5E]" />
+            <span>Customer otomatis tersimpan saat kasir input transaksi</span>
+          </div>
         </div>
       </div>
 
@@ -208,7 +134,7 @@ export default function CustomersPage() {
               <History className="h-5 w-5" />
             </div>
           </div>
-          <p className="mt-3 text-2xl font-bold text-slate-900">{formatRupiah(totalKunjungan)}</p>
+          <p className="mt-3 text-2xl font-bold text-slate-900">{totalKunjungan}x</p>
           <p className="mt-1 text-xs text-slate-500">Transaksi berstatus aktif</p>
         </div>
 
@@ -438,135 +364,6 @@ export default function CustomersPage() {
           <span>Tier otomatis menjadi <strong>Gold</strong> saat total kunjungan aktif &ge; 50 kali</span>
         </div>
       </div>
-
-      {/* Modal Tambah Customer */}
-      {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-              <h3 className="text-base font-bold text-slate-900">Tambah Customer Baru</h3>
-              <button
-                onClick={() => setShowAddModal(false)}
-                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleAddCustomer} className="mt-4 space-y-4">
-              {modalError && (
-                <div className="flex items-start gap-2 rounded-xl bg-rose-50 p-3 text-xs text-rose-700 border border-rose-200">
-                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-rose-500" />
-                  <span>{modalError}</span>
-                </div>
-              )}
-
-              {modalSuccess && (
-                <div className="flex items-start gap-2 rounded-xl bg-emerald-50 p-3 text-xs text-emerald-700 border border-emerald-200">
-                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
-                  <span>{modalSuccess}</span>
-                </div>
-              )}
-
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600">
-                  Nomor Polisi (Wajib)
-                </label>
-                <input
-                  id="modal-input-nopol"
-                  type="text"
-                  required
-                  placeholder="Contoh: B 1234 BSA"
-                  value={newNopol}
-                  onChange={(e) => handleNopolInputChange(e.target.value)}
-                  className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 font-mono text-sm font-bold tracking-wider uppercase text-slate-900 focus:border-[#0A2A5E] focus:bg-white focus:outline-hidden"
-                />
-                <p className="mt-1 text-[11px] text-slate-400">
-                  Format: HURUF spasi ANGKA spasi HURUF (contoh: B 1234 BSA, D 5678 XYZ)
-                </p>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600">
-                  Nama Pelanggan
-                </label>
-                <input
-                  id="modal-input-nama"
-                  type="text"
-                  placeholder="Contoh: Budi Santoso"
-                  value={newNama}
-                  onChange={(e) => setNewNama(e.target.value)}
-                  className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900 focus:border-[#0A2A5E] focus:bg-white focus:outline-hidden"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600">
-                  Nomor Handphone (WhatsApp)
-                </label>
-                <input
-                  id="modal-input-hp"
-                  type="text"
-                  placeholder="Contoh: 081234567890"
-                  value={newHp}
-                  onChange={(e) => setNewHp(e.target.value)}
-                  className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900 focus:border-[#0A2A5E] focus:bg-white focus:outline-hidden"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600">
-                  Kategori Kendaraan
-                </label>
-                <div className="mt-1 grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setNewKendaraan('Mobil')}
-                    className={`flex items-center justify-center gap-2 rounded-xl border p-2.5 text-sm font-medium transition ${
-                      newKendaraan === 'Mobil'
-                        ? 'border-[#0A2A5E] bg-blue-50 text-[#0A2A5E]'
-                        : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'
-                    }`}
-                  >
-                    <Car className="h-4 w-4" />
-                    <span>Mobil</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setNewKendaraan('Motor')}
-                    className={`flex items-center justify-center gap-2 rounded-xl border p-2.5 text-sm font-medium transition ${
-                      newKendaraan === 'Motor'
-                        ? 'border-[#0A2A5E] bg-blue-50 text-[#0A2A5E]'
-                        : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'
-                    }`}
-                  >
-                    <Car className="h-4 w-4" />
-                    <span>Motor</span>
-                  </button>
-                </div>
-              </div>
-
-              <div className="mt-6 flex items-center justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowAddModal(false)}
-                  className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
-                >
-                  Batal
-                </button>
-                <button
-                  id="modal-btn-submit-customer"
-                  type="submit"
-                  disabled={submitting}
-                  className="rounded-xl bg-[#0A2A5E] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#08224d] disabled:opacity-50"
-                >
-                  {submitting ? 'Menyimpan...' : 'Simpan Customer'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

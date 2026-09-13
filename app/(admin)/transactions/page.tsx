@@ -15,6 +15,8 @@ import {
   getTransactionStaff,
   getCustomerByNopol,
   addCustomer,
+  updateCustomer,
+  getOldPlateInfo,
 } from '@/lib/db';
 import { formatNominal, parseNominal, formatDate } from '@/lib/format';
 import {
@@ -142,6 +144,20 @@ export default function TransactionsPage() {
     if (clean.length >= 4) {
       if (!nopolRegex.test(clean)) {
         setNopolError('Format Nopol salah! Contoh benar: B 1234 BSA atau K 4321 NN');
+      }
+
+      // Check if retired old plate
+      const oldPlate = await getOldPlateInfo(clean);
+      if (oldPlate) {
+        setNopolError(
+          `Plat nomor ${clean} sudah berhenti aktif (telah diganti ke ${oldPlate.nopol_baru}). Silakan masukkan plat baru.`
+        );
+        setCustomerFound(null);
+        setCustomerNama('');
+        setCustomerHp('');
+        setCustomerIntensity(1);
+        setIsNewCustomer(false);
+        return;
       }
 
       // Check existing customer
@@ -310,16 +326,30 @@ export default function TransactionsPage() {
       return;
     }
 
-    if (isNewCustomer && (!customerNama.trim() || !customerHp.trim())) {
-      setFormError('Customer baru wajib mengisi Nama dan Nomor HP.');
+    if (!customerNama.trim() || !customerHp.trim()) {
+      setFormError('Nama Customer dan Nomor HP wajib diisi.');
+      return;
+    }
+
+    const oldPlate = await getOldPlateInfo(cleanNopol);
+    if (oldPlate) {
+      setFormError(
+        `Plat nomor ${cleanNopol} sudah tidak aktif (diganti menjadi ${oldPlate.nopol_baru}). Transaksi baru tidak dapat dibuat untuk plat lama.`
+      );
       return;
     }
 
     setSubmitting(true);
     try {
-      // 1. Resolve or create customer
-      let customerId = customerFound?.id;
+      // 1. Resolve or create customer (with latest Nama & HP)
+      let existingCustomer = customerFound;
+      if (!existingCustomer) {
+        existingCustomer = await getCustomerByNopol(cleanNopol);
+      }
+
+      let customerId = existingCustomer?.id;
       if (!customerId) {
+        // Buat customer baru
         const newCust = await addCustomer({
           nopol: cleanNopol,
           nama: customerNama.trim(),
@@ -329,6 +359,16 @@ export default function TransactionsPage() {
           created_at: new Date().toISOString(),
         });
         customerId = newCust.id;
+      } else {
+        // Customer ditemukan: UPDATE customers.nama dan customers.hp berdasarkan input terbaru kasir
+        // Tetap gunakan customer_id yang sama
+        // JANGAN membuat customer baru
+        // JANGAN mengubah nopol
+        // JANGAN mengubah intensitas secara manual
+        await updateCustomer(customerId, {
+          nama: customerNama.trim(),
+          hp: customerHp.trim(),
+        });
       }
 
       // 2. Resolve pricing & commission from price_list (COMMISSION IS CALCULATED FROM STANDARD PRICE LIST, NOT OVERRIDDEN PRICE)
@@ -364,8 +404,16 @@ export default function TransactionsPage() {
           {
             tanggal,
             customer_id: customerId,
+            no_polisi: cleanNopol,
+            customer_nama: customerNama.trim(),
+            customer_hp: customerHp.trim(),
+            kendaraan: currentPrice.kendaraan,
+            tipe: currentPrice.tipe,
+            paket_nama: currentPrice.paket,
             price_list_id: currentPrice.id,
             harga: baseHarga,
+            harga_standar: hargaStandar,
+            harga_disesuaikan: hargaDisesuaikan,
             metode_bayar: metodeBayar,
             keterangan: keterangan.trim() || null,
           },
@@ -380,8 +428,16 @@ export default function TransactionsPage() {
             tanggal,
             waktu: nowTime,
             customer_id: customerId,
+            no_polisi: cleanNopol,
+            customer_nama: customerNama.trim(),
+            customer_hp: customerHp.trim(),
+            kendaraan: currentPrice.kendaraan,
+            tipe: currentPrice.tipe,
+            paket_nama: currentPrice.paket,
             price_list_id: currentPrice.id,
             harga: baseHarga,
+            harga_standar: hargaStandar,
+            harga_disesuaikan: hargaDisesuaikan,
             metode_bayar: metodeBayar,
             keterangan: keterangan.trim() || null,
             kasir_id: user?.id || null,
@@ -776,43 +832,51 @@ export default function TransactionsPage() {
 
                 {/* Customer Lookup Info Banner */}
                 {noPolisiInput.trim().length >= 4 && (
-                  <div className="rounded-xl border border-blue-200 bg-blue-50/60 p-3.5 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-[#0A2A5E] flex items-center gap-1.5">
-                        <Car className="h-4 w-4 text-blue-600" />
-                        {customerFound ? 'Customer Terdaftar (Auto-Fill)' : 'Customer Baru (Wajib Isi Nama & HP)'}
-                      </span>
-                      <span className="rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-bold text-white">
-                        Total Kunjungan: {customerIntensity}x
-                      </span>
+                  <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3.5 space-y-3">
+                    <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <span className="text-xs font-bold text-[#0A2A5E] flex items-center gap-1.5">
+                          <Car className="h-4 w-4 text-blue-600" />
+                          {customerFound ? 'Customer Terdaftar (Auto-Fill)' : 'Customer Baru (Wajib Isi Nama & HP)'}
+                        </span>
+                        {customerFound && (
+                          <p className="text-[10px] text-slate-500 mt-0.5">
+                            Nama &amp; HP terisi dari data transaksi terakhir. Dapat diedit jika orang/pengemudi berganti.
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="rounded-md border border-blue-300 bg-white px-2.5 py-1 text-xs font-bold text-[#0A2A5E] shadow-2xs">
+                          Total Kunjungan: {customerIntensity}x
+                        </span>
+                        <span className="text-[10px] font-semibold text-slate-500">(Read-Only)</span>
+                      </div>
                     </div>
 
-                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 pt-1">
                       <div>
-                        <label className="block text-[11px] font-semibold text-slate-600 mb-0.5">Nama Customer</label>
+                        <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                          Nama Customer <span className="text-red-500">*</span>
+                        </label>
                         <input
                           type="text"
-                          placeholder="Nama lengkap..."
+                          placeholder="Nama customer..."
                           value={customerNama}
                           onChange={(e) => setCustomerNama(e.target.value)}
-                          readOnly={Boolean(customerFound)}
-                          className={`w-full rounded-lg border border-slate-300 py-1.5 px-2.5 text-xs text-slate-800 focus:outline-none ${
-                            customerFound ? 'bg-slate-100 text-slate-600 cursor-not-allowed' : 'bg-white focus:border-[#0A2A5E]'
-                          }`}
+                          className="w-full rounded-lg border border-slate-300 bg-white py-2 px-3 text-xs font-medium text-slate-900 focus:border-[#0A2A5E] focus:outline-none"
                           required
                         />
                       </div>
                       <div>
-                        <label className="block text-[11px] font-semibold text-slate-600 mb-0.5">No. HP / WhatsApp</label>
+                        <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                          No. HP / WhatsApp <span className="text-red-500">*</span>
+                        </label>
                         <input
                           type="text"
                           placeholder="08123456789"
                           value={customerHp}
                           onChange={(e) => setCustomerHp(e.target.value)}
-                          readOnly={Boolean(customerFound)}
-                          className={`w-full rounded-lg border border-slate-300 py-1.5 px-2.5 text-xs text-slate-800 focus:outline-none ${
-                            customerFound ? 'bg-slate-100 text-slate-600 cursor-not-allowed' : 'bg-white focus:border-[#0A2A5E]'
-                          }`}
+                          className="w-full rounded-lg border border-slate-300 bg-white py-2 px-3 text-xs font-medium text-slate-900 focus:border-[#0A2A5E] focus:outline-none"
                           required
                         />
                       </div>

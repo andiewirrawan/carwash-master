@@ -15,9 +15,6 @@ import {
   NopolHistory,
   KomisiManual,
   TransactionVoidLog,
-  Attendance,
-  AttendanceStatus,
-  StaffWeeklyIncentive,
 } from '@/types/database';
 import {
   initialVehicleCategories,
@@ -25,7 +22,6 @@ import {
   initialStaff,
   initialStaffMultipliers,
   initialUsers,
-  initialAttendance,
 } from './seedData';
 
 // Local storage keys
@@ -41,7 +37,6 @@ const STORAGE_KEYS = {
   NOPOL_HISTORY: 'bsa_carwash_nopol_history',
   KOMISI_MANUAL: 'bsa_carwash_komisi_manual',
   TRANSACTION_VOID_LOG: 'bsa_carwash_transaction_void_log',
-  ATTENDANCE: 'bsa_carwash_attendance',
 };
 
 // Seed Transactions for realistic dashboard & reporting (from 2026-08-15 to 2026-09-12)
@@ -811,6 +806,22 @@ export async function addTransaction(
   items.unshift(newTrx);
   setLocalData(STORAGE_KEYS.TRANSACTIONS, items);
 
+  // Auto update customer's total_kunjungan, total_omzet, and tier, and update latest contact info (nama/hp)
+  if (newTrx.customer_id) {
+    const rawCustomers = getLocalData<Customer>(STORAGE_KEYS.CUSTOMERS, initialCustomers);
+    const cIdx = rawCustomers.findIndex((c) => c.id === newTrx.customer_id);
+    if (cIdx !== -1) {
+      if (newTrx.customer_nama) rawCustomers[cIdx].nama = newTrx.customer_nama;
+      if (newTrx.customer_hp) rawCustomers[cIdx].hp = newTrx.customer_hp;
+      const newCount = (rawCustomers[cIdx].total_kunjungan || 0) + 1;
+      const newOmzet = (rawCustomers[cIdx].total_omzet || 0) + (Number(newTrx.harga) || 0);
+      rawCustomers[cIdx].total_kunjungan = newCount;
+      rawCustomers[cIdx].total_omzet = newOmzet;
+      rawCustomers[cIdx].tier = newCount >= 50 ? 'gold' : 'reguler';
+      setLocalData(STORAGE_KEYS.CUSTOMERS, rawCustomers);
+    }
+  }
+
   let nextStaffId = staffItems.length > 0 ? Math.max(...staffItems.map((i) => i.id || 1)) + 1 : 1;
   for (const s of staffAssignments) {
     staffItems.push({
@@ -865,8 +876,27 @@ export async function voidTransaction(
   const items = getLocalData<Transaction>(STORAGE_KEYS.TRANSACTIONS, initialTransactions);
   const index = items.findIndex((t) => t.id === id);
   if (index !== -1) {
+    const prevStatus = items[index].status;
     items[index].status = 'void';
     setLocalData(STORAGE_KEYS.TRANSACTIONS, items);
+
+    // If transaction was active, deduct customer's total_kunjungan and total_omzet
+    if (prevStatus === 'aktif' && items[index].customer_id) {
+      const rawCustomers = getLocalData<Customer>(STORAGE_KEYS.CUSTOMERS, initialCustomers);
+      const cIdx = rawCustomers.findIndex((c) => c.id === items[index].customer_id);
+      if (cIdx !== -1) {
+        const newCount = Math.max(0, (rawCustomers[cIdx].total_kunjungan || 1) - 1);
+        const newOmzet = Math.max(
+          0,
+          (rawCustomers[cIdx].total_omzet || Number(items[index].harga) || 0) -
+            (Number(items[index].harga) || 0)
+        );
+        rawCustomers[cIdx].total_kunjungan = newCount;
+        rawCustomers[cIdx].total_omzet = newOmzet;
+        rawCustomers[cIdx].tier = newCount >= 50 ? 'gold' : 'reguler';
+        setLocalData(STORAGE_KEYS.CUSTOMERS, rawCustomers);
+      }
+    }
   }
 
   const voidLogs = getLocalData<TransactionVoidLog>(STORAGE_KEYS.TRANSACTION_VOID_LOG, []);
@@ -1098,11 +1128,17 @@ export async function addCustomer(item: Omit<Customer, 'id'>): Promise<Customer>
     }
   }
 
-  const items = await getCustomers();
-  const nextId = items.length > 0 ? Math.max(...items.map((i) => i.id)) + 1 : 1;
-  const newItem: Customer = { ...item, id: nextId, total_kunjungan: 1, total_omzet: 0, tier: 'reguler' };
-  items.push(newItem);
-  setLocalData(STORAGE_KEYS.CUSTOMERS, items);
+  const rawCustomers = getLocalData<Customer>(STORAGE_KEYS.CUSTOMERS, initialCustomers);
+  const nextId = rawCustomers.length > 0 ? Math.max(...rawCustomers.map((i) => i.id)) + 1 : 1;
+  const newItem: Customer = {
+    ...item,
+    id: nextId,
+    total_kunjungan: 0,
+    total_omzet: 0,
+    tier: 'reguler',
+  };
+  rawCustomers.push(newItem);
+  setLocalData(STORAGE_KEYS.CUSTOMERS, rawCustomers);
   return newItem;
 }
 
@@ -1147,6 +1183,13 @@ export async function getNopolHistory(customerId?: number): Promise<NopolHistory
   return list.sort((a, b) => new Date(b.tanggal_ubah).getTime() - new Date(a.tanggal_ubah).getTime());
 }
 
+export async function getOldPlateInfo(nopol: string): Promise<NopolHistory | null> {
+  const clean = nopol.trim().toUpperCase().replace(/\s+/g, ' ');
+  const history = await getNopolHistory();
+  const found = history.find((h) => h.nopol_lama.toUpperCase() === clean);
+  return found || null;
+}
+
 export async function gantiNopol(
   customerId: number,
   nopolBaru: string,
@@ -1182,6 +1225,16 @@ export async function gantiNopol(
     return {
       success: false,
       error: `Plat nomor ${cleanNopol} sudah dipakai oleh customer lain. Silakan periksa kembali.`,
+    };
+  }
+
+  // Check if plate is a retired old plate
+  const history = await getNopolHistory();
+  const isRetired = history.some((h) => h.nopol_lama.toUpperCase() === cleanNopol);
+  if (isRetired) {
+    return {
+      success: false,
+      error: `Plat nomor ${cleanNopol} adalah plat lama yang sudah berhenti aktif. Silakan gunakan plat lain.`,
     };
   }
 
@@ -1666,241 +1719,6 @@ export async function deleteUser(id: number): Promise<boolean> {
   return true;
 }
 
-// -------------------------------------------------------------
-// ATTENDANCE / ABSENSI (Tahap 5)
-// -------------------------------------------------------------
-export async function getAttendanceList(filters?: {
-  tanggal?: string;
-  startDate?: string;
-  endDate?: string;
-  staffId?: number;
-}): Promise<Attendance[]> {
-  if (isSupabaseConfigured && supabase) {
-    try {
-      let query = supabase.from('attendance').select('*, staff:staff_id(nama, role)');
-      if (filters?.tanggal) query = query.eq('tanggal', filters.tanggal);
-      if (filters?.startDate) query = query.gte('tanggal', filters.startDate);
-      if (filters?.endDate) query = query.lte('tanggal', filters.endDate);
-      if (filters?.staffId) query = query.eq('staff_id', filters.staffId);
-      const { data, error } = await query.order('tanggal', { ascending: false });
-      if (!error && data) {
-        return (data as any[]).map((row) => ({
-          id: row.id,
-          staff_id: row.staff_id,
-          tanggal: row.tanggal,
-          status: row.status as AttendanceStatus,
-          staff_nama: row.staff?.nama,
-          staff_role: row.staff?.role,
-        }));
-      }
-    } catch (e) {
-      console.warn('Supabase getAttendanceList failed, using local storage:', e);
-    }
-  }
-
-  const staffList = getLocalData<Staff>(STORAGE_KEYS.STAFF, initialStaff);
-  const staffMap = new Map<number, Staff>();
-  for (const s of staffList) {
-    staffMap.set(s.id, s);
-  }
-
-  let items = getLocalData<Attendance>(STORAGE_KEYS.ATTENDANCE, initialAttendance);
-
-  if (filters?.tanggal) {
-    items = items.filter((a) => a.tanggal === filters.tanggal);
-  }
-  if (filters?.startDate) {
-    items = items.filter((a) => a.tanggal >= filters.startDate!);
-  }
-  if (filters?.endDate) {
-    items = items.filter((a) => a.tanggal <= filters.endDate!);
-  }
-  if (filters?.staffId) {
-    items = items.filter((a) => a.staff_id === filters.staffId);
-  }
-
-  return items.map((a) => {
-    const st = staffMap.get(a.staff_id);
-    return {
-      ...a,
-      staff_nama: a.staff_nama || st?.nama || `Staff #${a.staff_id}`,
-      staff_role: a.staff_role || st?.role || 'washer',
-    };
-  });
-}
-
-export async function getAttendanceByDate(tanggal: string): Promise<Attendance[]> {
-  return getAttendanceList({ tanggal });
-}
-
-export async function getMonthlyAttendance(yearMonth: string): Promise<Attendance[]> {
-  // yearMonth format: 'YYYY-MM'
-  const [yyyy, mm] = yearMonth.split('-').map(Number);
-  const lastDay = new Date(yyyy, mm, 0).getDate();
-  const startDate = `${yearMonth}-01`;
-  const endDate = `${yearMonth}-${String(lastDay).padStart(2, '0')}`;
-  return getAttendanceList({ startDate, endDate });
-}
-
-export async function saveBulkAttendance(
-  tanggal: string,
-  itemsToSave: { staff_id: number; status: AttendanceStatus }[]
-): Promise<boolean> {
-  const allStaff = getLocalData<Staff>(STORAGE_KEYS.STAFF, initialStaff);
-  const staffMap = new Map<number, Staff>();
-  for (const s of allStaff) {
-    staffMap.set(s.id, s);
-  }
-
-  const existingAttendance = getLocalData<Attendance>(STORAGE_KEYS.ATTENDANCE, initialAttendance);
-  let nextId = existingAttendance.length > 0 ? Math.max(...existingAttendance.map((a) => a.id)) + 1 : 1;
-
-  for (const item of itemsToSave) {
-    const existingIndex = existingAttendance.findIndex(
-      (a) => a.staff_id === item.staff_id && a.tanggal === tanggal
-    );
-
-    const st = staffMap.get(item.staff_id);
-
-    if (existingIndex !== -1) {
-      existingAttendance[existingIndex] = {
-        ...existingAttendance[existingIndex],
-        status: item.status,
-        staff_nama: st?.nama || existingAttendance[existingIndex].staff_nama,
-        staff_role: st?.role || existingAttendance[existingIndex].staff_role,
-      };
-    } else {
-      existingAttendance.push({
-        id: nextId++,
-        staff_id: item.staff_id,
-        tanggal,
-        status: item.status,
-        staff_nama: st?.nama || `Staff #${item.staff_id}`,
-        staff_role: st?.role || 'washer',
-      });
-    }
-  }
-
-  setLocalData(STORAGE_KEYS.ATTENDANCE, existingAttendance);
-
-  if (isSupabaseConfigured && supabase) {
-    try {
-      const payload = itemsToSave.map((item) => ({
-        staff_id: item.staff_id,
-        tanggal,
-        status: item.status,
-      }));
-      await supabase.from('attendance').upsert(payload, { onConflict: 'staff_id,tanggal' });
-    } catch (e) {
-      console.warn('Supabase saveBulkAttendance failed:', e);
-    }
-  }
-
-  return true;
-}
-
-export async function saveSingleAttendance(
-  staff_id: number,
-  tanggal: string,
-  status: AttendanceStatus
-): Promise<boolean> {
-  return saveBulkAttendance(tanggal, [{ staff_id, status }]);
-}
-
-// -------------------------------------------------------------
-// INSENTIF MINGGUAN (Tahap 5)
-// Gabungkan komisi_per_staff (Tahap 3) + komisi_manual (Tahap 2) + attendance
-// -------------------------------------------------------------
-export async function getWeeklyIncentives(
-  startDate: string,
-  endDate: string
-): Promise<StaffWeeklyIncentive[]> {
-  const [allStaff, transactions, staffTrxs, komisiManualList, attendanceList] = await Promise.all([
-    getStaffList(),
-    getTransactions({ status: 'aktif' }),
-    getTransactionStaff(),
-    getKomisiManual(),
-    getAttendanceList({ startDate, endDate }),
-  ]);
-
-  // Active transactions map
-  const activeTrxMap = new Map<number, Transaction>();
-  for (const t of transactions) {
-    if (t.status === 'aktif' && t.tanggal >= startDate && t.tanggal <= endDate) {
-      activeTrxMap.set(t.id, t);
-    }
-  }
-
-  // Calculate Komisi Cuci & Total Unit per staff
-  const staffCuciMap = new Map<number, { komisi: number; units: number }>();
-  for (const st of staffTrxs) {
-    const trx = activeTrxMap.get(st.transaction_id);
-    if (!trx) continue;
-
-    const current = staffCuciMap.get(st.staff_id) || { komisi: 0, units: 0 };
-    current.komisi += st.komisi;
-    current.units += 1;
-    staffCuciMap.set(st.staff_id, current);
-  }
-
-  // Calculate Komisi Manual per staff
-  const staffManualMap = new Map<number, { nominal: number; items: KomisiManual[] }>();
-  for (const km of komisiManualList) {
-    if (km.tanggal >= startDate && km.tanggal <= endDate) {
-      const current = staffManualMap.get(km.staff_id) || { nominal: 0, items: [] };
-      current.nominal += km.nominal;
-      current.items.push(km);
-      staffManualMap.set(km.staff_id, current);
-    }
-  }
-
-  // Calculate Hari Hadir from attendance per staff
-  const staffHadirMap = new Map<number, number>();
-  for (const att of attendanceList) {
-    if (att.status === 'Hadir') {
-      const count = staffHadirMap.get(att.staff_id) || 0;
-      staffHadirMap.set(att.staff_id, count + 1);
-    }
-  }
-
-  // Only include active staff (or inactive staff who worked in this period)
-  const relevantStaff = allStaff.filter((s) => {
-    if (s.aktif) return true;
-    const cuci = staffCuciMap.get(s.id);
-    const manual = staffManualMap.get(s.id);
-    return (cuci && cuci.units > 0) || (manual && manual.nominal > 0);
-  });
-
-  const result: StaffWeeklyIncentive[] = relevantStaff.map((staff) => {
-    const cuci = staffCuciMap.get(staff.id) || { komisi: 0, units: 0 };
-    const manual = staffManualMap.get(staff.id) || { nominal: 0, items: [] };
-    const hariHadir = staffHadirMap.get(staff.id) || 0;
-    const totalInsentif = cuci.komisi + manual.nominal;
-
-    return {
-      staff_id: staff.id,
-      nama: staff.nama,
-      role: staff.role,
-      multiplier: staff.latest_multiplier ?? 0,
-      hari_hadir: hariHadir,
-      total_unit_cuci: cuci.units,
-      komisi_cuci: cuci.komisi,
-      komisi_manual: manual.nominal,
-      rincian_manual: manual.items,
-      total_insentif: totalInsentif,
-    };
-  });
-
-  // Sort: role priority (leader, checker, washer) then highest incentive
-  const roleWeight: Record<string, number> = { leader: 1, checker: 2, washer: 3 };
-  return result.sort((a, b) => {
-    const wA = roleWeight[a.role] || 4;
-    const wB = roleWeight[b.role] || 4;
-    if (wA !== wB) return wA - wB;
-    return b.total_insentif - a.total_insentif;
-  });
-}
-
 export const SUPABASE_MIGRATION_SQL = `-- =============================================================
 -- Migration SQL & Views untuk Supabase (BSA Car Wash)
 -- =============================================================
@@ -1940,14 +1758,6 @@ create table if not exists staff_komisi_multiplier (
   berlaku_mulai date not null,
   dientry_oleh int references staff(id) on delete set null,
   created_at timestamptz default now()
-);
-
-create table if not exists attendance (
-  id serial primary key,
-  staff_id int references staff(id) on delete cascade,
-  tanggal date not null,
-  status text not null check (status in ('Hadir','Izin','Sakit','Alpha')),
-  unique (staff_id, tanggal)
 );
 
 create table if not exists customers (
@@ -1995,16 +1805,6 @@ create table if not exists transaction_staff (
   transaction_id int references transactions(id) on delete cascade,
   staff_id int references staff(id) on delete cascade,
   komisi numeric not null default 0
-);
-
-create table if not exists komisi_manual (
-  id serial primary key,
-  staff_id int references staff(id) on delete cascade,
-  tanggal date not null,
-  keterangan text not null,
-  nominal numeric not null,
-  dientry_oleh int references users(id) on delete set null,
-  created_at timestamptz default now()
 );
 
 create table if not exists users (
