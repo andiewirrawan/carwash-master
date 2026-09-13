@@ -31,7 +31,7 @@ export default function StaffMultiplierPage() {
   const staffId = rawId ? parseInt(rawId, 10) : NaN;
 
   const { user, hasAccess } = useAuth();
-  const canEdit = hasAccess('admin');
+  const canEdit = hasAccess('spv');
 
   const [staff, setStaff] = useState<Staff | null>(null);
   const [multipliers, setMultipliers] = useState<StaffKomisiMultiplier[]>([]);

@@ -132,18 +132,18 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
     {
       title: 'Master Data',
       icon: Database,
-      minRole: 'admin',
+      minRole: 'spv',
       subItems: [
-        { title: 'Daftar Harga', href: '/price-list', icon: Tag, minRole: 'admin' },
-        { title: 'Kategori Kendaraan', href: '/vehicles', icon: Car, minRole: 'admin' },
-        { title: 'Data Staff', href: '/staff', icon: Users, minRole: 'admin' },
+        { title: 'Daftar Harga', href: '/price-list', icon: Tag, minRole: 'spv' },
+        { title: 'Kategori Kendaraan', href: '/vehicles', icon: Car, minRole: 'spv' },
+        { title: 'Data Staff', href: '/staff', icon: Users, minRole: 'spv' },
       ],
     },
     {
       title: 'Riwayat Multiplier',
       href: '/staff-multipliers',
       icon: Percent,
-      minRole: 'admin',
+      minRole: 'spv',
     },
     {
       title: 'Kelola User',

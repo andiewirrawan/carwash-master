@@ -1,6 +1,7 @@
 import {
   VehicleCategory,
   PriceList,
+  PriceListKomisi,
   Staff,
   StaffKomisiMultiplier,
   User,
@@ -10,12 +11,27 @@ import {
 } from '@/types/database';
 
 export const initialVehicleCategories: VehicleCategory[] = [
-  { id: 1, kendaraan: 'Mobil', merk: 'Toyota', model: 'Avanza / Xenia / Ertiga', tipe: 'Medium', kategori: 1 },
-  { id: 2, kendaraan: 'Mobil', merk: 'Toyota', model: 'Fortuner / Pajero / Alphard', tipe: 'Large', kategori: 2 },
-  { id: 3, kendaraan: 'Mobil', merk: 'Honda', model: 'Brio / Yaris / Jazz', tipe: 'Small', kategori: 1 },
-  { id: 4, kendaraan: 'Motor', merk: 'Honda', model: 'Beat / Vario / Mio', tipe: 'Small', kategori: 3 },
-  { id: 5, kendaraan: 'Motor', merk: 'Yamaha', model: 'NMAX / PCX / Aerox', tipe: 'Medium', kategori: 3 },
-  { id: 6, kendaraan: 'Motor', merk: 'Kawasaki', model: 'ZX25R / Ninja 250', tipe: 'Large', kategori: 4 },
+  { id: 1, kendaraan: 'Mobil', merk: 'Toyota', model: 'Avanza / Xenia / Ertiga', tipe: 'Medium', keterangan: 'MPV Kompak Standard' },
+  { id: 2, kendaraan: 'Mobil', merk: 'Toyota', model: 'Fortuner / Pajero / Alphard', tipe: 'Large', keterangan: 'SUV & Premium Van' },
+  { id: 3, kendaraan: 'Mobil', merk: 'Honda', model: 'Brio / Yaris / Jazz', tipe: 'Small', keterangan: 'City Car & Hatchback' },
+  { id: 4, kendaraan: 'Motor', merk: 'Honda', model: 'Beat / Vario / Mio', tipe: 'Small', keterangan: 'Matic Kompak < 125cc' },
+  { id: 5, kendaraan: 'Motor', merk: 'Yamaha', model: 'NMAX / PCX / Aerox', tipe: 'Medium', keterangan: 'Matic Maxi 150-160cc' },
+  { id: 6, kendaraan: 'Motor', merk: 'Kawasaki', model: 'ZX25R / Ninja 250', tipe: 'Large', keterangan: 'Sport & Big Bike > 250cc' },
+];
+
+export const initialPriceListKomisi: PriceListKomisi[] = [
+  { id: 1, price_list_id: 1, peran: 'washer', komisi: 8000 },
+  { id: 2, price_list_id: 1, peran: 'checker', komisi: 4000 },
+  { id: 3, price_list_id: 2, peran: 'washer', komisi: 10000 },
+  { id: 4, price_list_id: 2, peran: 'checker', komisi: 5000 },
+  { id: 5, price_list_id: 3, peran: 'washer', komisi: 13000 },
+  { id: 6, price_list_id: 3, peran: 'checker', komisi: 6000 },
+  { id: 7, price_list_id: 4, peran: 'washer', komisi: 25000 },
+  { id: 8, price_list_id: 4, peran: 'checker', komisi: 12000 },
+  { id: 9, price_list_id: 5, peran: 'washer', komisi: 3000 },
+  { id: 10, price_list_id: 5, peran: 'checker', komisi: 1500 },
+  { id: 11, price_list_id: 6, peran: 'washer', komisi: 6000 },
+  { id: 12, price_list_id: 6, peran: 'checker', komisi: 3000 },
 ];
 
 export const initialPriceList: PriceList[] = [

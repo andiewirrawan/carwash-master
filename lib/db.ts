@@ -2,6 +2,7 @@ import { supabase, isSupabaseConfigured } from './supabase';
 import {
   VehicleCategory,
   PriceList,
+  PriceListKomisi,
   Staff,
   StaffMultiplier,
   StaffKomisiMultiplier,
@@ -19,6 +20,7 @@ import {
 import {
   initialVehicleCategories,
   initialPriceList,
+  initialPriceListKomisi,
   initialStaff,
   initialStaffMultipliers,
   initialUsers,
@@ -28,6 +30,7 @@ import {
 const STORAGE_KEYS = {
   VEHICLES: 'bsa_carwash_vehicles',
   PRICE_LIST: 'bsa_carwash_price_list',
+  PRICE_LIST_KOMISI: 'bsa_carwash_price_list_komisi',
   STAFF: 'bsa_carwash_staff',
   STAFF_MULTIPLIERS: 'bsa_carwash_staff_multipliers',
   USERS: 'bsa_carwash_users',
@@ -427,9 +430,90 @@ export async function deleteVehicleCategory(id: number): Promise<boolean> {
 }
 
 // -------------------------------------------------------------
-// PRICE LIST
+// PRICE LIST & PRICE LIST KOMISI (Tahap 1)
 // -------------------------------------------------------------
+export async function getPriceListKomisi(priceListId?: number): Promise<PriceListKomisi[]> {
+  if (isSupabaseConfigured && supabase) {
+    try {
+      let query = supabase.from('price_list_komisi').select('*').order('id', { ascending: true });
+      if (priceListId) {
+        query = query.eq('price_list_id', priceListId);
+      }
+      const { data, error } = await query;
+      if (!error && data) {
+        return (data as any[]).map((k) => ({
+          id: k.id,
+          price_list_id: k.price_list_id,
+          peran: k.peran,
+          komisi: Number(k.komisi) || 0,
+        }));
+      }
+    } catch (e) {
+      console.warn('Supabase getPriceListKomisi failed, using fallback:', e);
+    }
+  }
+
+  const all = getLocalData<PriceListKomisi>(
+    STORAGE_KEYS.PRICE_LIST_KOMISI,
+    initialPriceListKomisi
+  );
+  if (priceListId) {
+    return all.filter((k) => k.price_list_id === priceListId);
+  }
+  return all;
+}
+
+export async function savePriceListKomisi(
+  priceListId: number,
+  roles: { peran: string; komisi: number }[]
+): Promise<PriceListKomisi[]> {
+  if (isSupabaseConfigured && supabase) {
+    try {
+      // Delete existing komisi for this price_list_id
+      await supabase.from('price_list_komisi').delete().eq('price_list_id', priceListId);
+
+      if (roles.length > 0) {
+        const payload = roles.map((r) => ({
+          price_list_id: priceListId,
+          peran: r.peran.trim(),
+          komisi: Number(r.komisi) || 0,
+        }));
+        const { data, error } = await supabase
+          .from('price_list_komisi')
+          .insert(payload)
+          .select();
+        if (!error && data) {
+          return data as PriceListKomisi[];
+        }
+      }
+    } catch (e) {
+      console.warn('Supabase savePriceListKomisi failed, fallback to local:', e);
+    }
+  }
+
+  // Local storage fallback
+  const all = getLocalData<PriceListKomisi>(
+    STORAGE_KEYS.PRICE_LIST_KOMISI,
+    initialPriceListKomisi
+  );
+  const remaining = all.filter((k) => k.price_list_id !== priceListId);
+  let nextId = remaining.length > 0 ? Math.max(...remaining.map((k) => k.id)) + 1 : 1;
+
+  const newItems: PriceListKomisi[] = roles.map((r) => ({
+    id: nextId++,
+    price_list_id: priceListId,
+    peran: r.peran.trim(),
+    komisi: Number(r.komisi) || 0,
+  }));
+
+  const updatedAll = [...remaining, ...newItems];
+  setLocalData(STORAGE_KEYS.PRICE_LIST_KOMISI, updatedAll);
+  return newItems;
+}
+
 export async function getPriceList(): Promise<PriceList[]> {
+  let rawList: PriceList[] = [];
+
   if (isSupabaseConfigured && supabase) {
     try {
       const { data, error } = await supabase
@@ -437,8 +521,9 @@ export async function getPriceList(): Promise<PriceList[]> {
         .select('*')
         .order('id', { ascending: true });
       if (!error && data) {
-        return (data as any[]).map((p) => ({
+        rawList = (data as any[]).map((p) => ({
           ...p,
+          harga: Number(p.harga) || 0,
           paket_nama: p.paket_nama || p.paket,
         })) as PriceList[];
       }
@@ -446,18 +531,45 @@ export async function getPriceList(): Promise<PriceList[]> {
       console.warn('Supabase getPriceList failed, using fallback:', e);
     }
   }
-  return getLocalData<PriceList>(STORAGE_KEYS.PRICE_LIST, initialPriceList).map((p) => ({
-    ...p,
-    paket_nama: p.paket_nama || p.paket,
-  }));
+
+  if (rawList.length === 0) {
+    rawList = getLocalData<PriceList>(STORAGE_KEYS.PRICE_LIST, initialPriceList).map((p) => ({
+      ...p,
+      harga: Number(p.harga) || 0,
+      paket_nama: p.paket_nama || p.paket,
+    }));
+  }
+
+  // Load all commissions and map into each price_list item
+  const allKomisi = await getPriceListKomisi();
+  return rawList.map((item) => {
+    const matched = allKomisi.filter((k) => k.price_list_id === item.id);
+    const washerKomisi = matched.find((k) => k.peran.toLowerCase() === 'washer')?.komisi;
+    const checkerKomisi = matched.find((k) => k.peran.toLowerCase() === 'checker')?.komisi;
+
+    return {
+      ...item,
+      komisi_list: matched,
+      komisi_washer: washerKomisi !== undefined ? washerKomisi : item.komisi_washer,
+      komisi_checker: checkerKomisi !== undefined ? checkerKomisi : item.komisi_checker,
+    };
+  });
 }
 
-export async function addPriceList(item: Omit<PriceList, 'id'>): Promise<PriceList> {
+export async function addPriceList(
+  item: Omit<PriceList, 'id'>,
+  komisiList?: { peran: string; komisi: number }[]
+): Promise<PriceList> {
   const payload = {
-    ...item,
+    kendaraan: item.kendaraan,
     paket: item.paket || item.paket_nama || '',
-    paket_nama: item.paket_nama || item.paket || '',
+    fasilitas: item.fasilitas,
+    tipe: item.tipe,
+    harga: Number(item.harga) || 0,
   };
+
+  let createdId: number | null = null;
+  let createdItem: PriceList | null = null;
 
   if (isSupabaseConfigured && supabase) {
     try {
@@ -466,33 +578,57 @@ export async function addPriceList(item: Omit<PriceList, 'id'>): Promise<PriceLi
         .insert([payload])
         .select()
         .single();
-      if (!error && data) return data as PriceList;
+      if (!error && data) {
+        createdId = data.id;
+        createdItem = { ...data, harga: Number(data.harga) || 0, paket_nama: data.paket };
+      }
     } catch (e) {
       console.warn('Supabase insert price_list failed:', e);
     }
   }
 
-  const items = getLocalData<PriceList>(STORAGE_KEYS.PRICE_LIST, initialPriceList);
-  const nextId = items.length > 0 ? Math.max(...items.map((i) => i.id)) + 1 : 1;
-  const newItem: PriceList = { ...payload, id: nextId };
-  items.push(newItem);
-  setLocalData(STORAGE_KEYS.PRICE_LIST, items);
-  return newItem;
+  if (!createdItem) {
+    const items = getLocalData<PriceList>(STORAGE_KEYS.PRICE_LIST, initialPriceList);
+    const nextId = items.length > 0 ? Math.max(...items.map((i) => i.id)) + 1 : 1;
+    createdId = nextId;
+    createdItem = { ...payload, id: nextId, paket_nama: payload.paket };
+    items.push(createdItem);
+    setLocalData(STORAGE_KEYS.PRICE_LIST, items);
+  }
+
+  if (createdId && komisiList && komisiList.length > 0) {
+    const savedKomisi = await savePriceListKomisi(createdId, komisiList);
+    createdItem.komisi_list = savedKomisi;
+  }
+
+  return createdItem;
 }
 
 export async function updatePriceList(
   id: number,
-  item: Partial<PriceList>
+  item: Partial<PriceList>,
+  komisiList?: { peran: string; komisi: number }[]
 ): Promise<PriceList | null> {
+  const payload: Record<string, any> = {};
+  if (item.kendaraan !== undefined) payload.kendaraan = item.kendaraan;
+  if (item.paket !== undefined) payload.paket = item.paket;
+  if (item.fasilitas !== undefined) payload.fasilitas = item.fasilitas;
+  if (item.tipe !== undefined) payload.tipe = item.tipe;
+  if (item.harga !== undefined) payload.harga = Number(item.harga) || 0;
+
+  let updatedItem: PriceList | null = null;
+
   if (isSupabaseConfigured && supabase) {
     try {
       const { data, error } = await supabase
         .from('price_list')
-        .update(item)
+        .update(payload)
         .eq('id', id)
         .select()
         .single();
-      if (!error && data) return data as PriceList;
+      if (!error && data) {
+        updatedItem = { ...data, harga: Number(data.harga) || 0, paket_nama: data.paket };
+      }
     } catch (e) {
       console.warn('Supabase update price_list failed:', e);
     }
@@ -500,15 +636,27 @@ export async function updatePriceList(
 
   const items = getLocalData<PriceList>(STORAGE_KEYS.PRICE_LIST, initialPriceList);
   const index = items.findIndex((i) => i.id === id);
-  if (index === -1) return null;
-  items[index] = { ...items[index], ...item };
-  setLocalData(STORAGE_KEYS.PRICE_LIST, items);
-  return items[index];
+  if (index !== -1) {
+    items[index] = { ...items[index], ...payload, paket_nama: payload.paket || items[index].paket };
+    setLocalData(STORAGE_KEYS.PRICE_LIST, items);
+    if (!updatedItem) updatedItem = items[index];
+  }
+
+  if (komisiList !== undefined) {
+    const savedKomisi = await savePriceListKomisi(id, komisiList);
+    if (updatedItem) {
+      updatedItem.komisi_list = savedKomisi;
+    }
+  }
+
+  return updatedItem;
 }
 
 export async function deletePriceList(id: number): Promise<boolean> {
   if (isSupabaseConfigured && supabase) {
     try {
+      // First delete child price_list_komisi
+      await supabase.from('price_list_komisi').delete().eq('price_list_id', id);
       const { error } = await supabase.from('price_list').delete().eq('id', id);
       if (!error) return true;
     } catch (e) {
@@ -519,6 +667,17 @@ export async function deletePriceList(id: number): Promise<boolean> {
   const items = getLocalData<PriceList>(STORAGE_KEYS.PRICE_LIST, initialPriceList);
   const filtered = items.filter((i) => i.id !== id);
   setLocalData(STORAGE_KEYS.PRICE_LIST, filtered);
+
+  // Remove child komisi
+  const allKomisi = getLocalData<PriceListKomisi>(
+    STORAGE_KEYS.PRICE_LIST_KOMISI,
+    initialPriceListKomisi
+  );
+  setLocalData(
+    STORAGE_KEYS.PRICE_LIST_KOMISI,
+    allKomisi.filter((k) => k.price_list_id !== id)
+  );
+
   return true;
 }
 

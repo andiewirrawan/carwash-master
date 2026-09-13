@@ -1,5 +1,5 @@
 export type Role = 'admin' | 'spv' | 'owner' | 'sistem_owner';
-export type StaffRole = 'washer' | 'checker' | 'leader';
+export type StaffRole = 'washer' | 'checker' | 'leader' | string;
 
 export interface VehicleCategory {
   id: number;
@@ -7,13 +7,14 @@ export interface VehicleCategory {
   merk: string | null; // e.g., 'Toyota', 'Honda'
   model: string | null; // e.g., 'Avanza', 'Vario'
   tipe: string; // e.g., 'Small', 'Medium', 'Large', 'Luxury'
-  kategori: number | null; // Numeric category code
+  keterangan: string | null;
+  kategori?: number | null; // optional backwards compat
 }
 
 export interface PriceListKomisi {
   id: number;
   price_list_id: number;
-  peran: string; // e.g., 'washer', 'checker', 'kasir', etc.
+  peran: string; // e.g., 'washer', 'checker', 'kasir', 'leader', 'marketing', dll
   komisi: number;
 }
 
@@ -25,8 +26,8 @@ export interface PriceList {
   fasilitas: string; // e.g., 'Shampoo, Vacuum, Semir Ban'
   tipe: string; // e.g., 'Small', 'Medium', 'Large'
   harga: number; // Stored as numeric
-  komisi_washer?: number;
-  komisi_checker?: number;
+  komisi_washer?: number; // helper from komisi_list
+  komisi_checker?: number; // helper from komisi_list
   komisi_list?: PriceListKomisi[];
 }
 

@@ -25,11 +25,13 @@ import {
   ArrowRight,
   Sparkles,
   Info,
+  ShieldAlert,
 } from 'lucide-react';
 
 export default function GlobalStaffMultipliersPage() {
   const { user, hasAccess } = useAuth();
-  const canEdit = hasAccess('admin');
+  const canAccess = hasAccess('spv');
+  const canEdit = canAccess;
 
   const [staffList, setStaffList] = useState<Staff[]>([]);
   const [multipliers, setMultipliers] = useState<StaffKomisiMultiplier[]>([]);
@@ -142,6 +144,40 @@ export default function GlobalStaffMultipliersPage() {
       setJumpPageInput(String(currentPage));
     }
   };
+
+  if (!canAccess) {
+    return (
+      <AdminLayout>
+        <div className="mx-auto max-w-2xl py-12 px-4">
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-6 text-slate-800 shadow-sm">
+            <div className="flex items-start gap-4">
+              <div className="rounded-lg bg-amber-100 p-2 text-amber-700">
+                <ShieldAlert className="h-6 w-6" />
+              </div>
+              <div className="space-y-2">
+                <h2 className="text-lg font-bold text-slate-900">
+                  Akses Terbatas: Khusus SPV / Owner / Sistem Owner
+                </h2>
+                <p className="text-sm text-slate-600 leading-relaxed">
+                  Akun Anda saat ini memiliki role{' '}
+                  <strong className="text-slate-900 capitalize">{user?.role || 'Admin / Kasir'}</strong>.
+                  Sesuai ketentuan hak akses, <strong>Admin (Kasir)</strong> tidak dapat mengakses atau mengubah Master Data Komisi Multiplier.
+                </p>
+                <div className="pt-2">
+                  <Link
+                    href="/dashboard"
+                    className="inline-flex items-center gap-2 rounded-lg bg-[#0A2A5E] px-4 py-2 text-xs font-semibold text-white hover:bg-blue-900"
+                  >
+                    Kembali ke Dashboard
+                  </Link>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </AdminLayout>
+    );
+  }
 
   return (
     <AdminLayout>
