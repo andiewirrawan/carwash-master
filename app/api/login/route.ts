@@ -1,9 +1,65 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSupabaseAdmin } from '@/lib/supabaseServer';
+import { getSupabaseAdmin, getSupabaseAdminConfig } from '@/lib/supabaseServer';
+
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
+    const config = getSupabaseAdminConfig();
+
+    // Safe server-side diagnostic logging (NEVER logs secrets or values)
+    console.log('[API /api/login] Execution triggered:', {
+      timestamp: new Date().toISOString(),
+      hasUrl: config.hasUrl,
+      hasServiceRoleKey: config.hasServiceRoleKey,
+      detectedKeyName: config.detectedKeyName || 'NONE',
+      detectedUrlName: config.detectedUrlName || 'NONE',
+      isVercel: Boolean(process.env.VERCEL),
+      nodeEnv: process.env.NODE_ENV,
+    });
+
+    if (!config.hasUrl) {
+      console.error('[API /api/login] Supabase URL is missing on server-side');
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Konfigurasi server database belum lengkap: NEXT_PUBLIC_SUPABASE_URL belum terpasang di Environment Variables Vercel.',
+        },
+        { status: 500 }
+      );
+    }
+
+    if (!config.hasServiceRoleKey) {
+      console.error('[API /api/login] SUPABASE_SERVICE_ROLE_KEY is missing on server-side');
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Konfigurasi server database belum lengkap. Environment variable SUPABASE_SERVICE_ROLE_KEY perlu diisi di server-side (Vercel Project Settings > Environment Variables).',
+        },
+        { status: 500 }
+      );
+    }
+
+    const supabaseAdmin = getSupabaseAdmin();
+    if (!supabaseAdmin) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Gagal menginisialisasi koneksi server database Supabase.',
+        },
+        { status: 500 }
+      );
+    }
+
+    const body = await req.json().catch(() => null);
+    if (!body) {
+      return NextResponse.json(
+        { success: false, error: 'Request body tidak valid (harus JSON).' },
+        { status: 400 }
+      );
+    }
+
     const { username, password } = body;
 
     if (!username || typeof username !== 'string' || !username.trim()) {
@@ -20,18 +76,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const supabaseAdmin = getSupabaseAdmin();
-    if (!supabaseAdmin) {
-      console.error('SUPABASE_SERVICE_ROLE_KEY is missing on server');
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'Konfigurasi server database belum lengkap. Environment variable SUPABASE_SERVICE_ROLE_KEY perlu diisi di server-side.',
-        },
-        { status: 500 }
-      );
-    }
-
     const cleanUsername = username.trim();
 
     // Query users table securely using service_role on server
@@ -42,14 +86,11 @@ export async function POST(req: NextRequest) {
       .maybeSingle();
 
     if (dbError) {
-      console.error('Server login query error:', dbError);
+      console.error('[API /api/login] Database query error:', dbError.message);
       return NextResponse.json(
         {
           success: false,
           error: `Database query error: ${dbError.message}`,
-          code: dbError.code,
-          details: dbError.details,
-          hint: dbError.hint,
         },
         { status: 500 }
       );
@@ -90,7 +131,7 @@ export async function POST(req: NextRequest) {
       user: sessionUser,
     });
   } catch (err: any) {
-    console.error('API /api/login error:', err);
+    console.error('[API /api/login] Uncaught exception:', err);
     return NextResponse.json(
       {
         success: false,
