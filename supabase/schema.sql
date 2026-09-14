@@ -156,3 +156,94 @@ select s.id, 0, '2025-06-01', u.id
 from staff s cross join users u
 where s.nama = 'Agus Prayitno' and u.username = 'wiro'
 on conflict do nothing;
+
+-- =========================================================================
+-- TAHAP 2 DATABASE SCHEMA: TRANSAKSI, CUSTOMER, CLOSING, KOMISI MANUAL
+-- =========================================================================
+
+-- 1. Table: customers
+create table if not exists customers (
+  id serial primary key,
+  nopol text unique not null,
+  nama text,
+  hp text,
+  kendaraan text,
+  tier text default 'reguler',
+  created_at timestamptz default now()
+);
+
+-- 2. Table: nopol_history
+create table if not exists nopol_history (
+  id serial primary key,
+  customer_id int references customers(id) on delete cascade,
+  nopol_lama text not null,
+  nopol_baru text not null,
+  intensitas_saat_pindah int not null,  -- snapshot total kunjungan pas plat diganti, buat referensi riwayat
+  diubah_oleh int references users(id) on delete set null,
+  tanggal_ubah timestamptz default now()
+);
+
+-- 3. Table: transactions
+create table if not exists transactions (
+  id bigserial primary key,
+  tanggal date not null default current_date,
+  waktu time not null default current_time,
+  customer_id int references customers(id) on delete set null,
+  price_list_id int references price_list(id) on delete set null,
+  harga numeric not null,          -- SNAPSHOT harga saat mobil masuk, bukan referensi live
+  metode_bayar text,               -- NULLABLE — baru terisi pas tahap Pembayaran, bukan pas mobil masuk
+  keterangan text,
+  kasir_id int references users(id) on delete set null,
+  status text not null default 'aktif' check (status in ('aktif','void')),
+  status_pengerjaan text not null default 'proses' check (status_pengerjaan in ('proses','selesai')),
+  waktu_selesai timestamptz,       -- diisi otomatis pas tahap Pembayaran disubmit
+  created_at timestamptz default now()
+);
+
+-- 4. Table: transaction_staff
+create table if not exists transaction_staff (
+  transaction_id bigint references transactions(id) on delete cascade,
+  staff_id int references staff(id) on delete cascade,
+  peran text not null,
+  komisi numeric not null,
+  primary key (transaction_id, staff_id, peran)
+);
+
+-- 5. Table: transaction_void_log
+create table if not exists transaction_void_log (
+  id serial primary key,
+  transaction_id bigint references transactions(id) on delete cascade,
+  alasan text not null,
+  di_void_oleh int references users(id) on delete set null,
+  tanggal_void timestamptz default now()
+);
+
+-- 6. Table: daily_closing
+create table if not exists daily_closing (
+  id serial primary key,
+  tanggal date not null,
+  kasir_id int references users(id) on delete set null,
+  total_transaksi int not null,      -- jumlah transaksi selesai hari itu, milik kasir ybs
+  total_omzet numeric not null,
+  ditutup_pada timestamptz default now(),
+  unique (tanggal, kasir_id)         -- 1 kasir cuma bisa tutup 1x per hari
+);
+
+-- 7. Table: komisi_manual
+create table if not exists komisi_manual (
+  id serial primary key,
+  staff_id int references staff(id) on delete cascade,
+  tanggal date not null default current_date,
+  keterangan text not null,       -- bebas, misal "Cuci Karpet", "Cuci Jok", "Bonus Harian", dll
+  nominal numeric not null,       -- nominal bebas, ditentukan owner/sistem_owner tiap kasih
+  dientry_oleh int references users(id) on delete set null,
+  created_at timestamptz default now()
+);
+
+-- Indexes for performance
+create index if not exists idx_transactions_tanggal on transactions(tanggal);
+create index if not exists idx_transactions_status on transactions(status, status_pengerjaan);
+create index if not exists idx_transactions_customer on transactions(customer_id);
+create index if not exists idx_transactions_kasir on transactions(kasir_id);
+create index if not exists idx_customers_nopol on customers(nopol);
+create index if not exists idx_daily_closing_tanggal on daily_closing(tanggal);

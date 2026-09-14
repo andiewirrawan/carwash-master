@@ -84,13 +84,13 @@ export interface Transaction {
   harga: number; // Snapshot harga saat transaksi terjadi
   harga_standar?: number;
   harga_disesuaikan?: boolean;
-  metode_bayar: 'Tunai' | 'Qris' | 'Promo' | 'Piutang' | string;
+  metode_bayar?: 'Tunai' | 'Qris' | 'Promo' | 'Piutang' | string | null;
   status_piutang?: 'belum_lunas' | 'lunas' | null;
   tanggal_lunas?: string | null;
   keterangan?: string | null;
   kasir_id?: number | null;
   status: 'aktif' | 'void' | 'batal';
-  status_pengerjaan?: 'proses' | 'selesai';
+  status_pengerjaan: 'proses' | 'selesai';
   waktu_selesai?: string | null;
   created_at?: string;
   // Helpers for UI display
@@ -98,13 +98,33 @@ export interface Transaction {
   no_polisi?: string;
   customer_nama?: string;
   customer_hp?: string;
+  customer_tier?: string;
+  customer_intensitas?: number;
   kendaraan?: string;
   tipe?: string;
   paket_nama?: string;
+  fasilitas?: string;
   created_by?: string;
   created_by_nama?: string;
+  kasir_nama?: string;
   komisi_washer?: number;
   komisi_checker?: number;
+  staff_assigned?: TransactionStaff[];
+  void_log?: TransactionVoidLog | null;
+}
+
+export interface DailyClosing {
+  id: number;
+  tanggal: string; // YYYY-MM-DD
+  kasir_id: number;
+  total_transaksi: number;
+  total_omzet: number;
+  ditutup_pada: string;
+  kasir_nama?: string;
+  total_tunai?: number;
+  total_qris?: number;
+  total_promo?: number;
+  total_piutang?: number;
 }
 
 export interface TransactionStaff {

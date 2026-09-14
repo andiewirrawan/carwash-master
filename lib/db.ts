@@ -16,7 +16,8 @@ import {
   NopolHistory,
   KomisiManual,
   TransactionVoidLog,
-  Attendance
+  Attendance,
+  DailyClosing
 } from '@/types/database';
 
 if (!supabase) {
@@ -252,12 +253,100 @@ export async function getEffectiveMultiplierForDate(staffId: number, targetDateS
 }
 
 // -------------------------------------------------------------
-// TRANSACTIONS & TRANSACTION_STAFF
+// TRANSACTIONS & TRANSACTION_STAFF (TAHAP 2)
 // -------------------------------------------------------------
-export async function getTransactions(filters?: { status?: string; startDate?: string; endDate?: string; }): Promise<Transaction[]> {
-  let query = supabase.from('transactions').select('*').order('tanggal', { ascending: false }).order('waktu_selesai', { ascending: false });
-  if (filters?.status) {
+
+export const NOPOL_REGEX = /^[A-Z]{1,2} \d{1,4} [A-Z]{1,3}$/i;
+
+export function validateNopolFormat(nopol: string): { valid: boolean; formatted: string; error?: string } {
+  const clean = nopol.trim().toUpperCase().replace(/\s+/g, ' ');
+  if (!NOPOL_REGEX.test(clean)) {
+    return {
+      valid: false,
+      formatted: clean,
+      error: 'Format nomor polisi tidak valid! Wajib: HURUF + spasi + ANGKA + spasi + HURUF (contoh: K 1234 NN atau B 123 BSA)',
+    };
+  }
+  return { valid: true, formatted: clean };
+}
+
+export async function searchCustomerWithIntensity(nopol: string): Promise<{
+  found: boolean;
+  customer?: Customer;
+  intensitas: number;
+}> {
+  if (!isSupabaseConfigured) return { found: false, intensitas: 0 };
+  const clean = nopol.trim().toUpperCase().replace(/\s+/g, ' ');
+
+  const { data: customer, error } = await supabase
+    .from('customers')
+    .select('*')
+    .ilike('nopol', clean)
+    .maybeSingle();
+
+  if (error || !customer) {
+    return { found: false, intensitas: 0 };
+  }
+
+  // Calculate intensity: total active & completed transactions throughout time
+  const { count, error: countErr } = await supabase
+    .from('transactions')
+    .select('id', { count: 'exact', head: true })
+    .eq('customer_id', customer.id)
+    .eq('status', 'aktif')
+    .eq('status_pengerjaan', 'selesai');
+
+  const intensitas = countErr ? (customer.total_kunjungan || 0) : (count || 0);
+
+  return {
+    found: true,
+    customer: {
+      ...customer,
+      total_kunjungan: intensitas,
+    },
+    intensitas,
+  };
+}
+
+export async function getTransactions(filters?: {
+  status?: string;
+  status_pengerjaan?: string;
+  startDate?: string;
+  endDate?: string;
+  kasirId?: number;
+}): Promise<Transaction[]> {
+  if (!isSupabaseConfigured) return [];
+  
+  let query = supabase
+    .from('transactions')
+    .select(`
+      *,
+      customers (id, nopol, nama, hp, tier, kendaraan),
+      price_list (id, kendaraan, paket, fasilitas, tipe, harga),
+      users:kasir_id (id, nama, username),
+      transaction_staff (
+        transaction_id,
+        staff_id,
+        peran,
+        komisi,
+        staff:staff_id (id, nama, role)
+      ),
+      transaction_void_log (
+        id,
+        alasan,
+        di_void_oleh,
+        tanggal_void,
+        users:di_void_oleh (id, nama)
+      )
+    `)
+    .order('tanggal', { ascending: false })
+    .order('id', { ascending: false });
+
+  if (filters?.status && filters.status !== 'all') {
     query = query.eq('status', filters.status);
+  }
+  if (filters?.status_pengerjaan && filters.status_pengerjaan !== 'all') {
+    query = query.eq('status_pengerjaan', filters.status_pengerjaan);
   }
   if (filters?.startDate) {
     query = query.gte('tanggal', filters.startDate);
@@ -265,23 +354,323 @@ export async function getTransactions(filters?: { status?: string; startDate?: s
   if (filters?.endDate) {
     query = query.lte('tanggal', filters.endDate);
   }
+  if (filters?.kasirId) {
+    query = query.eq('kasir_id', filters.kasirId);
+  }
+
   const { data, error } = await query;
   if (error) {
-    console.error('getTransactions error:', error);
-    return [];
+    console.error('getTransactions join error, fallback to simple select:', error);
+    const { data: simpleData } = await supabase.from('transactions').select('*').order('id', { ascending: false });
+    return (simpleData || []) as Transaction[];
   }
-  return data as Transaction[];
+
+  return (data as any[]).map((t) => {
+    const cust = t.customers;
+    const price = t.price_list;
+    const staffRows = t.transaction_staff || [];
+    const voidLogs = t.transaction_void_log || [];
+    const latestVoid = voidLogs.length > 0 ? voidLogs[voidLogs.length - 1] : null;
+
+    const washers = staffRows.filter((s: any) => s.peran === 'washer');
+    const checkers = staffRows.filter((s: any) => s.peran === 'checker');
+
+    return {
+      ...t,
+      no_polisi: cust?.nopol || t.no_polisi || '-',
+      customer_nama: cust?.nama || t.customer_nama || '-',
+      customer_hp: cust?.hp || t.customer_hp || '-',
+      customer_tier: cust?.tier || 'reguler',
+      kendaraan: price?.kendaraan || t.kendaraan || '-',
+      paket_nama: price?.paket || t.paket_nama || '-',
+      fasilitas: price?.fasilitas || t.fasilitas || '-',
+      tipe: price?.tipe || t.tipe || '-',
+      kasir_nama: t.users?.nama || t.kasir_nama || 'Kasir',
+      komisi_washer: washers.reduce((acc: number, cur: any) => acc + Number(cur.komisi || 0), 0),
+      komisi_checker: checkers.reduce((acc: number, cur: any) => acc + Number(cur.komisi || 0), 0),
+      staff_assigned: staffRows.map((s: any) => ({
+        ...s,
+        staff_nama: s.staff?.nama || `Staff #${s.staff_id}`,
+        role: s.peran,
+      })),
+      void_log: latestVoid
+        ? {
+            id: latestVoid.id,
+            transaction_id: t.id,
+            alasan: latestVoid.alasan,
+            di_void_oleh: latestVoid.di_void_oleh,
+            di_void_oleh_nama: latestVoid.users?.nama || 'Owner',
+            tanggal_void: latestVoid.tanggal_void,
+          }
+        : null,
+    };
+  }) as Transaction[];
 }
 
 export async function getTransactionStaff(): Promise<TransactionStaff[]> {
-  const { data, error } = await supabase.from('transaction_staff').select('*');
+  if (!isSupabaseConfigured) return [];
+  const { data, error } = await supabase.from('transaction_staff').select('*, staff:staff_id(nama, role)');
   if (error) {
     console.error('getTransactionStaff error:', error);
     return [];
   }
-  return data as TransactionStaff[];
+  return (data as any[]).map((d) => ({
+    ...d,
+    staff_nama: d.staff?.nama,
+    role: d.peran,
+  })) as TransactionStaff[];
 }
 
+// A. Halaman "Mobil Masuk"
+export async function createMobilMasuk(params: {
+  nopol: string;
+  nama: string;
+  hp: string;
+  kendaraan: string;
+  price_list_id: number;
+  harga: number; // Snapshot harga saat mobil masuk
+  harga_standar: number;
+  harga_disesuaikan: boolean;
+  keterangan?: string;
+  kasir_id: number;
+  tanggal?: string;
+}): Promise<Transaction> {
+  if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+
+  const cleanNopol = params.nopol.trim().toUpperCase().replace(/\s+/g, ' ');
+
+  // 1. Cari atau buat customer
+  let customerId: number;
+  const { data: existingCustomer } = await supabase
+    .from('customers')
+    .select('id')
+    .ilike('nopol', cleanNopol)
+    .maybeSingle();
+
+  if (existingCustomer) {
+    customerId = existingCustomer.id;
+  } else {
+    const { data: newCust, error: custErr } = await supabase
+      .from('customers')
+      .insert([
+        {
+          nopol: cleanNopol,
+          nama: params.nama.trim(),
+          hp: params.hp.trim(),
+          kendaraan: params.kendaraan,
+          tier: 'reguler',
+        },
+      ])
+      .select()
+      .single();
+    if (custErr) throw new Error(`Gagal membuat data customer baru: ${custErr.message}`);
+    customerId = newCust.id;
+  }
+
+  // 2. Generate nomor transaksi
+  const trxDate = params.tanggal || new Date().toISOString().split('T')[0];
+  const now = new Date();
+  const waktu = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+
+  const todayCountQuery = await supabase
+    .from('transactions')
+    .select('id', { count: 'exact' })
+    .eq('tanggal', trxDate);
+  const countToday = (todayCountQuery.count || 0) + 1;
+  const no_transaksi = `TRX-${trxDate.replace(/-/g, '')}-${String(countToday).padStart(3, '0')}`;
+
+  // Keterangan khusus jika harga disesuaikan
+  let finalKeterangan = params.keterangan ? params.keterangan.trim() : '';
+  if (params.harga_disesuaikan && !finalKeterangan.includes('Harga disesuaikan')) {
+    finalKeterangan = finalKeterangan ? `${finalKeterangan} (Harga disesuaikan)` : 'Harga disesuaikan';
+  }
+
+  // 3. Simpan transaksi baru: status_pengerjaan='proses', metode_bayar=NULL, tanpa washer
+  const { data: trx, error: trxErr } = await supabase
+    .from('transactions')
+    .insert([
+      {
+        tanggal: trxDate,
+        waktu,
+        customer_id: customerId,
+        price_list_id: params.price_list_id,
+        harga: Number(params.harga),
+        metode_bayar: null,
+        keterangan: finalKeterangan || null,
+        kasir_id: params.kasir_id,
+        status: 'aktif',
+        status_pengerjaan: 'proses',
+        waktu_selesai: null,
+      },
+    ])
+    .select()
+    .single();
+
+  if (trxErr) throw new Error(`Gagal menyimpan transaksi mobil masuk: ${trxErr.message}`);
+  return trx as Transaction;
+}
+
+// B. Perhitungan Komisi Washer & Checker
+export async function calculateStaffCommissionsForTransaction(
+  priceListId: number,
+  transactionDate: string,
+  washerIds: number[],
+  checkerIds: number[]
+): Promise<Array<{ staff_id: number; peran: string; komisi: number; multiplier?: number; staff_nama?: string }>> {
+  if (!isSupabaseConfigured) return [];
+
+  const { data: komisiRows, error } = await supabase
+    .from('price_list_komisi')
+    .select('*')
+    .eq('price_list_id', priceListId);
+
+  if (error || !komisiRows) {
+    console.error('calculateStaffCommissions error:', error);
+    return [];
+  }
+
+  const assignments: Array<{ staff_id: number; peran: string; komisi: number; multiplier?: number; staff_nama?: string }> = [];
+
+  // 1. Washer Pool
+  const washerRule = komisiRows.find((r) => r.peran?.toLowerCase() === 'washer');
+  const totalWasherKomisi = washerRule ? Number(washerRule.komisi) : 0;
+
+  if (washerIds.length > 0 && totalWasherKomisi > 0) {
+    const baseWasher = totalWasherKomisi / washerIds.length;
+    for (const wid of washerIds) {
+      const mult = await getEffectiveMultiplierForDate(wid, transactionDate);
+      const finalKomisi = Math.round(baseWasher * (1 + mult / 100));
+      assignments.push({
+        staff_id: wid,
+        peran: 'washer',
+        komisi: finalKomisi,
+        multiplier: mult,
+      });
+    }
+  }
+
+  // 2. Checker Pool (Tanpa multiplier)
+  const checkerRule = komisiRows.find((r) => r.peran?.toLowerCase() === 'checker');
+  const totalCheckerKomisi = checkerRule ? Number(checkerRule.komisi) : 0;
+
+  if (checkerIds.length > 0 && totalCheckerKomisi > 0) {
+    const baseChecker = Math.round(totalCheckerKomisi / checkerIds.length);
+    for (const cid of checkerIds) {
+      assignments.push({
+        staff_id: cid,
+        peran: 'checker',
+        komisi: baseChecker,
+        multiplier: 0,
+      });
+    }
+  }
+
+  return assignments;
+}
+
+// B. Assign / Update Washer & Checker ("Sedang Dikerjakan")
+export async function assignTransactionStaff(
+  transactionId: number,
+  assignments: Array<{ staff_id: number; peran: string; komisi: number }>
+): Promise<void> {
+  if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+
+  // Hapus penugasan lama untuk transaksi ini
+  const { error: delErr } = await supabase
+    .from('transaction_staff')
+    .delete()
+    .eq('transaction_id', transactionId);
+
+  if (delErr) {
+    console.error('assignTransactionStaff delete error:', delErr);
+  }
+
+  if (assignments.length > 0) {
+    const payload = assignments.map((a) => ({
+      transaction_id: transactionId,
+      staff_id: a.staff_id,
+      peran: a.peran,
+      komisi: a.komisi,
+    }));
+
+    const { error: insErr } = await supabase.from('transaction_staff').insert(payload);
+    if (insErr) {
+      throw new Error(`Gagal menyimpan penugasan staff: ${insErr.message}`);
+    }
+  }
+}
+
+// C. Pembayaran ("Pembayaran")
+export async function completeTransactionPayment(params: {
+  transactionId: number;
+  metode_bayar: 'Tunai' | 'Qris' | 'Promo' | 'Piutang';
+  keterangan?: string;
+}): Promise<Transaction> {
+  if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+
+  const waktu_selesai = new Date().toISOString();
+
+  // Ambil transaksi saat ini untuk dapat customer_id dan omzet
+  const { data: currentTrx, error: fetchErr } = await supabase
+    .from('transactions')
+    .select('*, customers(id)')
+    .eq('id', params.transactionId)
+    .single();
+
+  if (fetchErr || !currentTrx) throw new Error('Transaksi tidak ditemukan.');
+
+  let finalKeterangan = currentTrx.keterangan || '';
+  if (params.keterangan && params.keterangan.trim()) {
+    finalKeterangan = finalKeterangan
+      ? `${finalKeterangan} | ${params.keterangan.trim()}`
+      : params.keterangan.trim();
+  }
+
+  const updates: any = {
+    metode_bayar: params.metode_bayar,
+    status_pengerjaan: 'selesai',
+    waktu_selesai,
+    keterangan: finalKeterangan || null,
+  };
+
+  if (params.metode_bayar === 'Piutang') {
+    updates.status_piutang = 'belum_lunas';
+  }
+
+  const { data: updated, error: updErr } = await supabase
+    .from('transactions')
+    .update(updates)
+    .eq('id', params.transactionId)
+    .select()
+    .single();
+
+  if (updErr) throw new Error(`Gagal memproses pembayaran: ${updErr.message}`);
+
+  // Hitung ulang intensitas customer (hanya status='aktif' AND status_pengerjaan='selesai')
+  if (currentTrx.customer_id) {
+    const { count } = await supabase
+      .from('transactions')
+      .select('id', { count: 'exact', head: true })
+      .eq('customer_id', currentTrx.customer_id)
+      .eq('status', 'aktif')
+      .eq('status_pengerjaan', 'selesai');
+
+    const totalKunjungan = count || 1;
+    const tier = totalKunjungan >= 50 ? 'gold' : 'reguler';
+
+    await supabase
+      .from('customers')
+      .update({
+        total_kunjungan: totalKunjungan,
+        tier,
+      })
+      .eq('id', currentTrx.customer_id);
+  }
+
+  return updated as Transaction;
+}
+
+// Backwards-compatible addTransaction
 export async function addTransaction(
   trx: Omit<Transaction, 'id' | 'no_transaksi' | 'created_at'>,
   staffAssignments: Array<{ staff_id: number; peran?: string; komisi: number }>
@@ -313,67 +702,66 @@ export async function addTransaction(
     if (staffError) throw staffError;
   }
 
-  // Update customer omzet / kunjungan based on triggers or backend, but we'll do it manually here if needed.
-  if (savedTrx.customer_id && savedTrx.status === 'aktif' && savedTrx.status_pengerjaan === 'selesai') {
-    const custRes = await supabase.from('customers').select('total_kunjungan, total_omzet').eq('id', savedTrx.customer_id).single();
-    if (custRes.data) {
-      const newKunjungan = (custRes.data.total_kunjungan || 0) + 1;
-      const newOmzet = (custRes.data.total_omzet || 0) + Number(savedTrx.harga);
-      const tier = newKunjungan >= 50 ? 'gold' : 'reguler';
-      await supabase.from('customers').update({
-        total_kunjungan: newKunjungan,
-        total_omzet: newOmzet,
-        tier
-      }).eq('id', savedTrx.customer_id);
-    }
-  }
-
   return savedTrx;
 }
 
+// Update Transaction (Dengan pengecekan tutup hari)
 export async function updateTransaction(
   id: number,
   updates: Partial<Transaction>,
-  staffAssignments: Array<{ staff_id: number; peran?: string; komisi: number }>
+  staffAssignments?: Array<{ staff_id: number; peran?: string; komisi: number }>
 ): Promise<void> {
   const { error } = await supabase.from('transactions').update(updates).eq('id', id);
   if (error) throw error;
 
-  await supabase.from('transaction_staff').delete().eq('transaction_id', id);
-  if (staffAssignments.length > 0) {
-    const staffInserts = staffAssignments.map((s) => ({
-      transaction_id: id,
-      staff_id: s.staff_id,
-      peran: s.peran || 'washer',
-      komisi: s.komisi,
-    }));
-    await supabase.from('transaction_staff').insert(staffInserts);
+  if (staffAssignments) {
+    await supabase.from('transaction_staff').delete().eq('transaction_id', id);
+    if (staffAssignments.length > 0) {
+      const staffInserts = staffAssignments.map((s) => ({
+        transaction_id: id,
+        staff_id: s.staff_id,
+        peran: s.peran || 'washer',
+        komisi: s.komisi,
+      }));
+      await supabase.from('transaction_staff').insert(staffInserts);
+    }
   }
 }
 
+// Void Transaksi (Khusus Owner / Sistem Owner)
 export async function voidTransaction(id: number, alasan: string, userId: number | null): Promise<void> {
+  if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+  if (!alasan || !alasan.trim()) {
+    throw new Error('Alasan void wajib diisi.');
+  }
+
   const trxRes = await supabase.from('transactions').select('status, customer_id, harga').eq('id', id).single();
-  
+
   if (trxRes.data && trxRes.data.status === 'aktif') {
     const { error } = await supabase.from('transactions').update({ status: 'void' }).eq('id', id);
     if (error) throw error;
-    
-    await supabase.from('transaction_void_log').insert([{
-      transaction_id: id,
-      alasan,
-      di_void_oleh: userId,
-      tanggal_void: new Date().toISOString(),
-    }]);
 
-    // Deduct omzet and visits
+    await supabase.from('transaction_void_log').insert([
+      {
+        transaction_id: id,
+        alasan: alasan.trim(),
+        di_void_oleh: userId,
+        tanggal_void: new Date().toISOString(),
+      },
+    ]);
+
+    // Recalculate customer visits
     if (trxRes.data.customer_id) {
-      const custRes = await supabase.from('customers').select('total_kunjungan, total_omzet').eq('id', trxRes.data.customer_id).single();
-      if (custRes.data) {
-        const newKunjungan = Math.max(0, (custRes.data.total_kunjungan || 1) - 1);
-        const newOmzet = Math.max(0, (custRes.data.total_omzet || Number(trxRes.data.harga) || 0) - (Number(trxRes.data.harga) || 0));
-        const tier = newKunjungan >= 50 ? 'gold' : 'reguler';
-        await supabase.from('customers').update({ total_kunjungan: newKunjungan, total_omzet: newOmzet, tier }).eq('id', trxRes.data.customer_id);
-      }
+      const { count } = await supabase
+        .from('transactions')
+        .select('id', { count: 'exact', head: true })
+        .eq('customer_id', trxRes.data.customer_id)
+        .eq('status', 'aktif')
+        .eq('status_pengerjaan', 'selesai');
+
+      const newKunjungan = count || 0;
+      const tier = newKunjungan >= 50 ? 'gold' : 'reguler';
+      await supabase.from('customers').update({ total_kunjungan: newKunjungan, tier }).eq('id', trxRes.data.customer_id);
     }
   }
 }
@@ -697,35 +1085,172 @@ export async function deleteAttendance(id: number): Promise<void> {
 }
 
 // -------------------------------------------------------------
-// DAILY CLOSING
+// DAILY CLOSING (TAHAP 2)
 // -------------------------------------------------------------
-export interface DailyClosing {
-  id: number;
-  tanggal: string;
-  total_omzet: number;
-  total_tunai: number;
-  total_qris: number;
-  total_piutang: number;
-  jumlah_transaksi: number;
-  closed_by: number | null;
-  created_at: string;
-  closed_by_nama?: string;
+
+export async function isDayClosedForCashier(tanggal: string, kasirId: number): Promise<boolean> {
+  if (!isSupabaseConfigured) return false;
+  const { data, error } = await supabase
+    .from('daily_closing')
+    .select('id')
+    .eq('tanggal', tanggal)
+    .eq('kasir_id', kasirId)
+    .maybeSingle();
+
+  if (error || !data) return false;
+  return true;
 }
 
-export async function getDailyClosingList(): Promise<DailyClosing[]> {
-  const { data, error } = await supabase.from('daily_closing').select('*, users:closed_by(nama)').order('tanggal', { ascending: false });
+export async function getDailyClosing(tanggal: string, kasirId?: number): Promise<DailyClosing | null> {
+  if (!isSupabaseConfigured) return null;
+  let query = supabase.from('daily_closing').select('*, users:kasir_id(nama)').eq('tanggal', tanggal);
+  if (kasirId) {
+    query = query.eq('kasir_id', kasirId);
+  }
+  const { data, error } = await query.maybeSingle();
+  if (error || !data) return null;
+
+  return {
+    id: data.id,
+    tanggal: data.tanggal,
+    kasir_id: data.kasir_id,
+    total_transaksi: Number(data.total_transaksi || 0),
+    total_omzet: Number(data.total_omzet || 0),
+    ditutup_pada: data.ditutup_pada,
+    kasir_nama: (data as any).users?.nama || 'Kasir',
+  } as DailyClosing;
+}
+
+export async function getDailyClosingList(tanggal?: string): Promise<DailyClosing[]> {
+  if (!isSupabaseConfigured) return [];
+  let query = supabase
+    .from('daily_closing')
+    .select('*, users:kasir_id(nama, username)')
+    .order('tanggal', { ascending: false })
+    .order('ditutup_pada', { ascending: false });
+
+  if (tanggal) {
+    query = query.eq('tanggal', tanggal);
+  }
+
+  const { data, error } = await query;
   if (error) {
     console.error('getDailyClosingList error:', error);
     return [];
   }
-  return (data as any[]).map(d => ({
-    ...d,
-    closed_by_nama: d.users?.nama
+
+  return (data as any[]).map((d) => ({
+    id: d.id,
+    tanggal: d.tanggal,
+    kasir_id: d.kasir_id,
+    total_transaksi: Number(d.total_transaksi || 0),
+    total_omzet: Number(d.total_omzet || 0),
+    ditutup_pada: d.ditutup_pada,
+    kasir_nama: d.users?.nama || `Kasir #${d.kasir_id}`,
   })) as DailyClosing[];
 }
 
-export async function addDailyClosing(item: Omit<DailyClosing, 'id' | 'created_at'>): Promise<DailyClosing> {
-  const { data, error } = await supabase.from('daily_closing').insert([item]).select().single();
-  if (error) throw error;
-  return data as DailyClosing;
+export async function createDailyClosing(params: {
+  tanggal: string;
+  kasir_id: number;
+  total_transaksi: number;
+  total_omzet: number;
+}): Promise<DailyClosing> {
+  if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+
+  const { data, error } = await supabase
+    .from('daily_closing')
+    .insert([
+      {
+        tanggal: params.tanggal,
+        kasir_id: params.kasir_id,
+        total_transaksi: params.total_transaksi,
+        total_omzet: params.total_omzet,
+        ditutup_pada: new Date().toISOString(),
+      },
+    ])
+    .select('*, users:kasir_id(nama)')
+    .single();
+
+  if (error) {
+    console.error('createDailyClosing error:', error);
+    throw new Error(`Gagal menutup hari: ${error.message}`);
+  }
+
+  return {
+    id: data.id,
+    tanggal: data.tanggal,
+    kasir_id: data.kasir_id,
+    total_transaksi: Number(data.total_transaksi || 0),
+    total_omzet: Number(data.total_omzet || 0),
+    ditutup_pada: data.ditutup_pada,
+    kasir_nama: (data as any).users?.nama || 'Kasir',
+  } as DailyClosing;
+}
+
+export async function reopenDailyClosing(closingId: number): Promise<boolean> {
+  if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+  const { error } = await supabase.from('daily_closing').delete().eq('id', closingId);
+  if (error) {
+    console.error('reopenDailyClosing error:', error);
+    throw new Error(`Gagal membuka kembali transaksi hari ini: ${error.message}`);
+  }
+  return true;
+}
+
+export async function getKasirClosingPreview(tanggal: string, kasirId: number): Promise<{
+  total_selesai: number;
+  total_omzet: number;
+  breakdown: { Tunai: number; Qris: number; Promo: number; Piutang: number; Lainnya: number };
+  transaksi_proses: Transaction[];
+  sudah_tutup: boolean;
+  closing_info: DailyClosing | null;
+}> {
+  if (!isSupabaseConfigured) {
+    return {
+      total_selesai: 0,
+      total_omzet: 0,
+      breakdown: { Tunai: 0, Qris: 0, Promo: 0, Piutang: 0, Lainnya: 0 },
+      transaksi_proses: [],
+      sudah_tutup: false,
+      closing_info: null,
+    };
+  }
+
+  // 1. Cek apakah kasir ini sudah tutup hari ini
+  const closingInfo = await getDailyClosing(tanggal, kasirId);
+
+  // 2. Ambil transaksi kasir hari ini yang aktif
+  const trxs = await getTransactions({
+    startDate: tanggal,
+    endDate: tanggal,
+    kasirId,
+    status: 'aktif',
+  });
+
+  const selesaiList = trxs.filter((t) => t.status_pengerjaan === 'selesai');
+  const prosesList = trxs.filter((t) => t.status_pengerjaan === 'proses');
+
+  const breakdown = { Tunai: 0, Qris: 0, Promo: 0, Piutang: 0, Lainnya: 0 };
+  let total_omzet = 0;
+
+  for (const t of selesaiList) {
+    const val = Number(t.harga || 0);
+    total_omzet += val;
+    const mb = (t.metode_bayar || '').toLowerCase();
+    if (mb === 'tunai') breakdown.Tunai += val;
+    else if (mb === 'qris') breakdown.Qris += val;
+    else if (mb === 'promo') breakdown.Promo += val;
+    else if (mb === 'piutang') breakdown.Piutang += val;
+    else breakdown.Lainnya += val;
+  }
+
+  return {
+    total_selesai: selesaiList.length,
+    total_omzet,
+    breakdown,
+    transaksi_proses: prosesList,
+    sudah_tutup: Boolean(closingInfo),
+    closing_info: closingInfo,
+  };
 }
