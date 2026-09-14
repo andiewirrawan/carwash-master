@@ -53,6 +53,19 @@ export function getSupabaseAdmin() {
       autoRefreshToken: false,
       detectSessionInUrl: false,
     },
+    global: {
+      fetch: async (url, options) => {
+        try {
+          const response = await fetch(url, options);
+          return response;
+        } catch (err: any) {
+          if (err.name === 'TypeError' && err.message === 'Failed to fetch') {
+            throw new Error('Koneksi ke database Supabase gagal dari sisi server (Failed to fetch). Pastikan SUPABASE_URL valid dan aktif.');
+          }
+          throw err;
+        }
+      },
+    },
   });
 }
 

@@ -188,7 +188,7 @@ export async function addStaff(item: Omit<Staff, 'id'>): Promise<Staff> {
 }
 
 export async function updateStaff(id: number, item: Partial<Staff>): Promise<Staff | null> {
-  if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+
   const { data, error } = await supabase.from('staff').update(item).eq('id', id).select().single();
   if (error) {
     console.error('updateStaff error:', error);
@@ -198,7 +198,7 @@ export async function updateStaff(id: number, item: Partial<Staff>): Promise<Sta
 }
 
 export async function deleteStaff(id: number): Promise<boolean> {
-  if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+
   const { error } = await supabase.from('staff').delete().eq('id', id);
   if (error) {
     console.error('deleteStaff error:', error);
@@ -229,7 +229,7 @@ export async function getStaffMultipliers(staffId?: number): Promise<StaffKomisi
 }
 
 export async function addStaffMultiplier(item: Omit<StaffKomisiMultiplier, 'id'>): Promise<StaffKomisiMultiplier> {
-  if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+
   const { data, error } = await supabase.from('staff_komisi_multiplier').insert([{
     staff_id: item.staff_id,
     multiplier: Number(item.multiplier) || 0,
@@ -435,7 +435,7 @@ export async function createMobilMasuk(params: {
   kasir_id: number;
   tanggal?: string;
 }): Promise<Transaction> {
-  if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+
 
   const cleanNopol = params.nopol.trim().toUpperCase().replace(/\s+/g, ' ');
 
@@ -573,7 +573,7 @@ export async function assignTransactionStaff(
   transactionId: number,
   assignments: Array<{ staff_id: number; peran: string; komisi: number }>
 ): Promise<void> {
-  if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+
 
   // Hapus penugasan lama untuk transaksi ini
   const { error: delErr } = await supabase
@@ -606,7 +606,7 @@ export async function completeTransactionPayment(params: {
   metode_bayar: 'Tunai' | 'Qris' | 'Promo' | 'Piutang';
   keterangan?: string;
 }): Promise<Transaction> {
-  if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+
 
   const waktu_selesai = new Date().toISOString();
 
@@ -730,7 +730,7 @@ export async function updateTransaction(
 
 // Void Transaksi (Khusus Owner / Sistem Owner)
 export async function voidTransaction(id: number, alasan: string, userId: number | null): Promise<void> {
-  if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+
   if (!alasan || !alasan.trim()) {
     throw new Error('Alasan void wajib diisi.');
   }
@@ -855,7 +855,7 @@ export async function getCustomerByNopol(nopol: string): Promise<Customer | null
 }
 
 export async function addCustomer(item: Omit<Customer, 'id'>): Promise<Customer> {
-  if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+
   const payload = {
     ...item,
     tier: 'reguler',
@@ -868,7 +868,7 @@ export async function addCustomer(item: Omit<Customer, 'id'>): Promise<Customer>
 }
 
 export async function updateCustomer(id: number, updates: Partial<Customer>): Promise<void> {
-  if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+
   const { error } = await supabase.from('customers').update(updates).eq('id', id);
   if (error) throw error;
 }
@@ -906,7 +906,7 @@ export async function gantiNopol(
   diubahOleh: number | null,
   diubahOlehNama?: string
 ): Promise<{ success: boolean; error?: string }> {
-  if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+
 
   const validation = validateNopolFormat(nopolBaru);
   if (!validation.valid) {
@@ -1074,7 +1074,7 @@ export async function getPiutangTransactions(
 }
 
 export async function markPiutangLunas(transactionId: number): Promise<boolean> {
-  if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+
 
   const { error } = await supabase
     .from('transactions')
@@ -1310,7 +1310,7 @@ export async function createDailyClosing(params: {
   total_transaksi: number;
   total_omzet: number;
 }): Promise<DailyClosing> {
-  if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+
 
   const { data, error } = await supabase
     .from('daily_closing')
@@ -1343,7 +1343,7 @@ export async function createDailyClosing(params: {
 }
 
 export async function reopenDailyClosing(closingId: number): Promise<boolean> {
-  if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+
   const { error } = await supabase.from('daily_closing').delete().eq('id', closingId);
   if (error) {
     console.error('reopenDailyClosing error:', error);
