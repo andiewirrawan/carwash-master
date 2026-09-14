@@ -28,7 +28,7 @@ export default function PiutangPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'belum_lunas' | 'lunas' | 'all'>('belum_lunas');
+  const [statusFilter, setStatusFilter] = useState<'belum_lunas' | 'lunas'>('belum_lunas');
 
   // Modal Confirm Lunas
   const [selectedTrx, setSelectedTrx] = useState<Transaction | null>(null);
@@ -53,9 +53,18 @@ export default function PiutangPage() {
 
   // KPI Calculations across all piutang
   const [allPiutang, setAllPiutang] = useState<Transaction[]>([]);
-  useEffect(() => {
-    getPiutangTransactions('all').then((res) => setAllPiutang(res));
+  const loadAllPiutang = useCallback(async () => {
+    try {
+      const res = await getPiutangTransactions('all');
+      setAllPiutang(res);
+    } catch (err) {
+      console.error('Failed loading all piutang:', err);
+    }
   }, []);
+
+  useEffect(() => {
+    loadAllPiutang();
+  }, [loadAllPiutang]);
 
   const belumLunasList = allPiutang.filter((t) => t.status_piutang !== 'lunas');
   const lunasList = allPiutang.filter((t) => t.status_piutang === 'lunas');
@@ -86,10 +95,8 @@ export default function PiutangPage() {
         setSelectedTrx(null);
         setLunasSuccess('');
         setProcessingLunas(false);
-        await loadPiutang();
-        const updatedAll = await getPiutangTransactions('all');
-        setAllPiutang(updatedAll);
-      }, 1000);
+        await Promise.all([loadPiutang(), loadAllPiutang()]);
+      }, 700);
     } catch (err) {
       console.error('Failed marking lunas:', err);
       setProcessingLunas(false);
@@ -199,40 +206,43 @@ export default function PiutangPage() {
           )}
         </div>
 
-        {/* Status Tabs */}
+        {/* Status Tabs (2 Tab Horizontal: [Belum Lunas] [Lunas]) */}
         <div className="flex rounded-xl bg-slate-100 p-1 text-xs font-medium">
           <button
             id="tab-piutang-belum-lunas"
             onClick={() => setStatusFilter('belum_lunas')}
-            className={`rounded-lg px-3.5 py-1.5 transition ${
+            className={`flex items-center gap-1.5 rounded-lg px-4 py-2 transition ${
               statusFilter === 'belum_lunas'
                 ? 'bg-rose-600 font-semibold text-white shadow-xs'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            Belum Lunas ({belumLunasList.length})
+            <span>Belum Lunas</span>
+            <span
+              className={`rounded-full px-2 py-0.2 text-[11px] font-bold ${
+                statusFilter === 'belum_lunas' ? 'bg-rose-700 text-white' : 'bg-slate-200 text-slate-700'
+              }`}
+            >
+              {belumLunasList.length}
+            </span>
           </button>
           <button
             id="tab-piutang-lunas"
             onClick={() => setStatusFilter('lunas')}
-            className={`rounded-lg px-3.5 py-1.5 transition ${
+            className={`flex items-center gap-1.5 rounded-lg px-4 py-2 transition ${
               statusFilter === 'lunas'
                 ? 'bg-emerald-600 font-semibold text-white shadow-xs'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            Lunas ({lunasList.length})
-          </button>
-          <button
-            id="tab-piutang-all"
-            onClick={() => setStatusFilter('all')}
-            className={`rounded-lg px-3.5 py-1.5 transition ${
-              statusFilter === 'all'
-                ? 'bg-white font-semibold text-slate-900 shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            Semua ({allPiutang.length})
+            <span>Lunas</span>
+            <span
+              className={`rounded-full px-2 py-0.2 text-[11px] font-bold ${
+                statusFilter === 'lunas' ? 'bg-emerald-700 text-white' : 'bg-slate-200 text-slate-700'
+              }`}
+            >
+              {lunasList.length}
+            </span>
           </button>
         </div>
       </div>

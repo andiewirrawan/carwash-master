@@ -767,35 +767,95 @@ export async function voidTransaction(id: number, alasan: string, userId: number
 }
 
 // -------------------------------------------------------------
-// CUSTOMERS & NOPOL HISTORY
+// -------------------------------------------------------------
+// CUSTOMERS & NOPOL HISTORY (TAHAP 4)
 // -------------------------------------------------------------
 export async function getCustomers(search?: string): Promise<Customer[]> {
+  if (!isSupabaseConfigured) return [];
+
   let query = supabase.from('customers').select('*').order('id', { ascending: false });
   if (search && search.trim()) {
-    query = query.or(`nopol.ilike.%${search}%,nama.ilike.%${search}%,hp.ilike.%${search}%`);
+    const q = search.trim();
+    // Search by nopol or nama
+    query = query.or(`nopol.ilike.%${q}%,nama.ilike.%${q}%`);
   }
-  const { data, error } = await query;
-  if (error) {
+
+  const { data: rawCustomers, error } = await query;
+  if (error || !rawCustomers) {
     console.error('getCustomers error:', error);
     return [];
   }
-  return data as Customer[];
+
+  // Aggregate active & completed transactions to accurately calculate total_kunjungan & total_omzet
+  // Transactions that are voided or still 'proses' (unpaid) are strictly excluded.
+  const { data: activeCompletedTrx } = await supabase
+    .from('transactions')
+    .select('customer_id, harga')
+    .eq('status', 'aktif')
+    .eq('status_pengerjaan', 'selesai');
+
+  const countMap = new Map<number, number>();
+  const omzetMap = new Map<number, number>();
+
+  if (activeCompletedTrx) {
+    for (const trx of activeCompletedTrx) {
+      if (trx.customer_id) {
+        const cId = Number(trx.customer_id);
+        countMap.set(cId, (countMap.get(cId) || 0) + 1);
+        omzetMap.set(cId, (omzetMap.get(cId) || 0) + (Number(trx.harga) || 0));
+      }
+    }
+  }
+
+  return (rawCustomers as Customer[]).map((c) => {
+    const totalKunjungan = countMap.get(c.id) ?? 0;
+    const totalOmzet = omzetMap.get(c.id) ?? 0;
+    const calculatedTier = totalKunjungan >= 50 ? 'gold' : 'reguler';
+
+    return {
+      ...c,
+      total_kunjungan: totalKunjungan,
+      total_omzet: totalOmzet,
+      tier: calculatedTier,
+    };
+  });
 }
 
 export async function getCustomerById(id: number): Promise<Customer | null> {
-  const { data, error } = await supabase.from('customers').select('*').eq('id', id).single();
-  if (error) return null;
-  return data as Customer;
+  if (!isSupabaseConfigured) return null;
+  const { data, error } = await supabase.from('customers').select('*').eq('id', id).maybeSingle();
+  if (error || !data) return null;
+
+  // Aggregate active & completed transactions for this customer
+  const { data: trxs } = await supabase
+    .from('transactions')
+    .select('harga')
+    .eq('customer_id', id)
+    .eq('status', 'aktif')
+    .eq('status_pengerjaan', 'selesai');
+
+  const totalKunjungan = trxs ? trxs.length : (data.total_kunjungan || 0);
+  const totalOmzet = trxs ? trxs.reduce((sum, t) => sum + (Number(t.harga) || 0), 0) : (data.total_omzet || 0);
+  const calculatedTier = totalKunjungan >= 50 ? 'gold' : 'reguler';
+
+  return {
+    ...data,
+    total_kunjungan: totalKunjungan,
+    total_omzet: totalOmzet,
+    tier: calculatedTier,
+  } as Customer;
 }
 
 export async function getCustomerByNopol(nopol: string): Promise<Customer | null> {
-  const clean = nopol.trim().toUpperCase();
-  const { data, error } = await supabase.from('customers').select('*').ilike('nopol', clean).single();
-  if (error) return null;
+  if (!isSupabaseConfigured) return null;
+  const clean = nopol.trim().toUpperCase().replace(/\s+/g, ' ');
+  const { data, error } = await supabase.from('customers').select('*').ilike('nopol', clean).maybeSingle();
+  if (error || !data) return null;
   return data as Customer;
 }
 
 export async function addCustomer(item: Omit<Customer, 'id'>): Promise<Customer> {
+  if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
   const payload = {
     ...item,
     tier: 'reguler',
@@ -808,24 +868,34 @@ export async function addCustomer(item: Omit<Customer, 'id'>): Promise<Customer>
 }
 
 export async function updateCustomer(id: number, updates: Partial<Customer>): Promise<void> {
+  if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
   const { error } = await supabase.from('customers').update(updates).eq('id', id);
   if (error) throw error;
 }
 
 export async function getNopolHistory(customerId?: number): Promise<NopolHistory[]> {
-  let query = supabase.from('nopol_history').select('*').order('tanggal_ubah', { ascending: false });
+  if (!isSupabaseConfigured) return [];
+  let query = supabase
+    .from('nopol_history')
+    .select('*, users:diubah_oleh(nama, username)')
+    .order('tanggal_ubah', { ascending: false });
+
   if (customerId) query = query.eq('customer_id', customerId);
   const { data, error } = await query;
   if (error) {
     console.error('getNopolHistory error:', error);
     return [];
   }
-  return data as NopolHistory[];
+  return (data as any[]).map((h) => ({
+    ...h,
+    diubah_oleh_nama: h.users?.nama || (h.diubah_oleh ? `User #${h.diubah_oleh}` : 'Admin/Sistem'),
+  })) as NopolHistory[];
 }
 
 export async function getOldPlateInfo(nopol: string): Promise<NopolHistory | null> {
-  const clean = nopol.trim().toUpperCase().replace(/s+/g, ' ');
-  const { data, error } = await supabase.from('nopol_history').select('*').ilike('nopol_lama', clean).limit(1).single();
+  if (!isSupabaseConfigured) return null;
+  const clean = nopol.trim().toUpperCase().replace(/\s+/g, ' ');
+  const { data, error } = await supabase.from('nopol_history').select('*').ilike('nopol_lama', clean).limit(1).maybeSingle();
   if (error) return null;
   return data as NopolHistory;
 }
@@ -836,104 +906,188 @@ export async function gantiNopol(
   diubahOleh: number | null,
   diubahOlehNama?: string
 ): Promise<{ success: boolean; error?: string }> {
-  const nopolRegex = /^[A-Z]{1,2}sd{1,4}s[A-Z]{1,3}$/i;
-  const cleanNopol = nopolBaru.trim().toUpperCase().replace(/s+/g, ' ');
+  if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
 
-  if (!nopolRegex.test(cleanNopol)) {
-    return { success: false, error: 'Format plat nomor harus berupa: HURUF spasi ANGKA spasi HURUF (contoh: B 1234 BSA)' };
+  const validation = validateNopolFormat(nopolBaru);
+  if (!validation.valid) {
+    return { success: false, error: validation.error || 'Format nomor polisi tidak valid!' };
   }
 
-  const { data: customer } = await supabase.from('customers').select('*').eq('id', customerId).single();
-  if (!customer) return { success: false, error: 'Data customer tidak ditemukan' };
-  
+  const cleanNopol = validation.formatted;
+
+  const { data: customer } = await supabase.from('customers').select('*').eq('id', customerId).maybeSingle();
+  if (!customer) return { success: false, error: 'Data customer tidak ditemukan.' };
+
   if (customer.nopol.toUpperCase() === cleanNopol) {
-    return { success: false, error: 'Plat nomor baru sama persis dengan plat nomor saat ini' };
+    return { success: false, error: 'Nomor polisi baru sama persis dengan plat nomor saat ini.' };
   }
 
-  const { data: exist } = await supabase.from('customers').select('id').ilike('nopol', cleanNopol).single();
-  if (exist) return { success: false, error: `Plat nomor ${cleanNopol} sudah dipakai oleh customer lain.` };
+  // Cek apakah nopol baru sudah dipakai customer lain
+  const { data: exist } = await supabase.from('customers').select('id').ilike('nopol', cleanNopol).maybeSingle();
+  if (exist) return { success: false, error: `Nomor polisi ${cleanNopol} sudah dipakai oleh customer lain.` };
 
-  const { data: retired } = await supabase.from('nopol_history').select('id').ilike('nopol_lama', cleanNopol).single();
-  if (retired) return { success: false, error: `Plat nomor ${cleanNopol} adalah plat lama yang sudah berhenti aktif.` };
+  // Cek apakah nopol baru adalah plat lama yang sudah berhenti aktif
+  const { data: retired } = await supabase.from('nopol_history').select('id').ilike('nopol_lama', cleanNopol).maybeSingle();
+  if (retired) return { success: false, error: `Nomor polisi ${cleanNopol} adalah plat lama yang sudah berhenti aktif.` };
 
-  const intensitas = customer.total_kunjungan || 0;
+  // Snapshot intensitas saat pindah (total kunjungan aktif & selesai sampai saat ini)
+  const { count } = await supabase
+    .from('transactions')
+    .select('id', { count: 'exact', head: true })
+    .eq('customer_id', customerId)
+    .eq('status', 'aktif')
+    .eq('status_pengerjaan', 'selesai');
 
+  const intensitasSaatPindah = count ?? (customer.total_kunjungan || 0);
+
+  // Simpan nopol_lama -> nopol_baru + snapshot intensitas_saat_pindah ke tabel nopol_history
   const newHistoryRecord = {
     customer_id: customerId,
     nopol_lama: customer.nopol,
     nopol_baru: cleanNopol,
-    intensitas_saat_pindah: intensitas,
+    intensitas_saat_pindah: intensitasSaatPindah,
     diubah_oleh: diubahOleh,
     tanggal_ubah: new Date().toISOString(),
   };
 
   const { error: histError } = await supabase.from('nopol_history').insert([newHistoryRecord]);
-  if (histError) return { success: false, error: histError.message };
+  if (histError) return { success: false, error: `Gagal mencatat riwayat plat: ${histError.message}` };
 
+  // Update kolom nopol di tabel customers (intensitas TIDAK di-reset)
   const { error: updError } = await supabase.from('customers').update({ nopol: cleanNopol }).eq('id', customerId);
-  if (updError) return { success: false, error: updError.message };
+  if (updError) return { success: false, error: `Gagal memperbarui plat customer: ${updError.message}` };
 
   return { success: true };
 }
 
 export async function getCustomerTransactions(customerId: number): Promise<Transaction[]> {
+  if (!isSupabaseConfigured) return [];
   const customer = await getCustomerById(customerId);
   if (!customer) return [];
-  const history = await getNopolHistory(customerId);
-  const pastPlates = history.map(h => h.nopol_lama.toUpperCase());
-  
-  // Create an array of all associated plates including current
-  const allPlates = [customer.nopol.toUpperCase(), ...pastPlates];
-  
+
+  // Ambil riwayat plat untuk customer ini
+  const nopolHistory = await getNopolHistory(customerId);
+  // Urutkan riwayat dari yang paling lama ke yang terbaru
+  const sortedHistory = [...nopolHistory].sort(
+    (a, b) => new Date(a.tanggal_ubah).getTime() - new Date(b.tanggal_ubah).getTime()
+  );
+
   const { data, error } = await supabase
     .from('transactions')
-    .select('*')
-    .or(`customer_id.eq.${customerId},no_polisi.in.(${allPlates.map(p=>`"${p}"`).join(',')})`)
-    .order('tanggal', { ascending: false });
-    
+    .select(`
+      *,
+      price_list (id, kendaraan, paket, fasilitas, tipe, harga),
+      users:kasir_id (id, nama, username)
+    `)
+    .eq('customer_id', customerId)
+    .order('tanggal', { ascending: false })
+    .order('id', { ascending: false });
+
   if (error) {
     console.error('getCustomerTransactions error:', error);
     return [];
   }
-  return data as Transaction[];
+
+  return (data as any[]).map((t) => {
+    const price = t.price_list;
+    const trxDateTime = t.created_at || `${t.tanggal}T${t.waktu || '00:00:00'}`;
+    const trxTime = new Date(trxDateTime).getTime();
+
+    // Tentukan nopol yang aktif saat transaksi ini terjadi
+    let plateUsed = customer.nopol;
+    for (const h of sortedHistory) {
+      const changeTime = new Date(h.tanggal_ubah).getTime();
+      if (trxTime < changeTime) {
+        plateUsed = h.nopol_lama;
+        break;
+      }
+    }
+
+    return {
+      ...t,
+      no_polisi: t.no_polisi || plateUsed,
+      kendaraan: price?.kendaraan || t.kendaraan || '-',
+      paket_nama: price?.paket || t.paket_nama || '-',
+      fasilitas: price?.fasilitas || t.fasilitas || '-',
+      tipe: price?.tipe || t.tipe || '-',
+      kasir_nama: t.users?.nama || t.kasir_nama || 'Kasir',
+    };
+  }) as Transaction[];
 }
 
 // -------------------------------------------------------------
-// PIUTANG MANAGEMENT
+// PIUTANG MANAGEMENT (TAHAP 4)
 // -------------------------------------------------------------
-export async function getPiutangTransactions(statusFilter: 'belum_lunas' | 'lunas' | 'all' = 'belum_lunas', search?: string): Promise<Transaction[]> {
-  let query = supabase.from('transactions').select('*, customers(nama, hp)').eq('metode_bayar', 'Piutang').eq('status', 'aktif').order('tanggal', { ascending: false });
+export async function getPiutangTransactions(
+  statusFilter: 'belum_lunas' | 'lunas' | 'all' = 'belum_lunas',
+  search?: string
+): Promise<Transaction[]> {
+  if (!isSupabaseConfigured) return [];
+
+  let query = supabase
+    .from('transactions')
+    .select(`
+      *,
+      customers (id, nopol, nama, hp),
+      price_list (id, kendaraan, paket, fasilitas, tipe)
+    `)
+    .eq('metode_bayar', 'Piutang')
+    .eq('status', 'aktif')
+    .order('tanggal', { ascending: false })
+    .order('id', { ascending: false });
+
   if (statusFilter === 'belum_lunas') {
     query = query.neq('status_piutang', 'lunas');
   } else if (statusFilter === 'lunas') {
     query = query.eq('status_piutang', 'lunas');
   }
+
   const { data, error } = await query;
   if (error) {
     console.error('getPiutangTransactions error:', error);
     return [];
   }
-  let trxs = (data as any[]).map(t => ({
+
+  let trxs = (data as any[]).map((t) => ({
     ...t,
-    customer_nama: t.customers?.nama || t.customer_nama,
-    customer_hp: t.customers?.hp || t.customer_hp,
+    no_polisi: t.customers?.nopol || t.no_polisi || '-',
+    customer_nama: t.customers?.nama || t.customer_nama || '-',
+    customer_hp: t.customers?.hp || t.customer_hp || '-',
+    paket_nama: t.price_list?.paket || t.paket_nama || '-',
+    kendaraan: t.price_list?.kendaraan || t.kendaraan || '-',
+    tipe: t.price_list?.tipe || t.tipe || '-',
   })) as Transaction[];
-  
+
   if (search && search.trim()) {
     const q = search.trim().toLowerCase();
-    trxs = trxs.filter(t => 
-      t.no_transaksi?.toLowerCase().includes(q) ||
-      t.no_polisi?.toLowerCase().includes(q) ||
-      t.customer_nama?.toLowerCase().includes(q) ||
-      t.paket_nama?.toLowerCase().includes(q)
+    trxs = trxs.filter(
+      (t) =>
+        t.no_transaksi?.toLowerCase().includes(q) ||
+        t.no_polisi?.toLowerCase().includes(q) ||
+        t.customer_nama?.toLowerCase().includes(q) ||
+        t.customer_hp?.toLowerCase().includes(q) ||
+        t.paket_nama?.toLowerCase().includes(q)
     );
   }
+
   return trxs;
 }
 
 export async function markPiutangLunas(transactionId: number): Promise<boolean> {
-  const { error } = await supabase.from('transactions').update({ status_piutang: 'lunas', tanggal_lunas: new Date().toISOString() }).eq('id', transactionId);
-  if (error) throw error;
+  if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+
+  const { error } = await supabase
+    .from('transactions')
+    .update({
+      status_piutang: 'lunas',
+      tanggal_lunas: new Date().toISOString(),
+    })
+    .eq('id', transactionId);
+
+  if (error) {
+    console.error('markPiutangLunas error:', error);
+    throw error;
+  }
   return true;
 }
 
