@@ -21,6 +21,7 @@ import {
   AlertTriangle,
   Receipt,
 } from 'lucide-react';
+import { AdminLayout } from '@/components/layout/AdminLayout';
 
 export default function PiutangPage() {
   const { user, hasAccess } = useAuth();
@@ -96,7 +97,8 @@ export default function PiutangPage() {
   };
 
   return (
-    <div id="piutang-page" className="space-y-6">
+    <AdminLayout>
+      <div id="piutang-page" className="space-y-6">
       {/* Header */}
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
@@ -464,6 +466,7 @@ export default function PiutangPage() {
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </AdminLayout>
   );
 }

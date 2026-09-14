@@ -20,6 +20,7 @@ import {
   X,
   ExternalLink,
 } from 'lucide-react';
+import { AdminLayout } from '@/components/layout/AdminLayout';
 
 export default function CustomersPage() {
   const { user, hasAccess } = useAuth();
@@ -80,7 +81,8 @@ export default function CustomersPage() {
   const totalOmzet = customers.reduce((acc, c) => acc + (c.total_omzet || 0), 0);
 
   return (
-    <div id="customers-page" className="space-y-6">
+    <AdminLayout>
+      <div id="customers-page" className="space-y-6">
       {/* Header */}
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
@@ -364,6 +366,7 @@ export default function CustomersPage() {
           <span>Tier otomatis menjadi <strong>Gold</strong> saat total kunjungan aktif &ge; 50 kali</span>
         </div>
       </div>
-    </div>
+      </div>
+    </AdminLayout>
   );
 }

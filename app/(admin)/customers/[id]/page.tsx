@@ -33,6 +33,7 @@ import {
   RefreshCw,
   Save,
 } from 'lucide-react';
+import { AdminLayout } from '@/components/layout/AdminLayout';
 
 export default function CustomerDetailPage() {
   const params = useParams();
@@ -181,7 +182,8 @@ export default function CustomerDetailPage() {
   const isGold = customer.tier === 'gold' || (customer.total_kunjungan || 0) >= 50;
 
   return (
-    <div id="customer-detail-page" className="space-y-6">
+    <AdminLayout>
+      <div id="customer-detail-page" className="space-y-6">
       {/* Top Bar with Back Button */}
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div className="flex items-center gap-3">
@@ -715,6 +717,7 @@ export default function CustomerDetailPage() {
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </AdminLayout>
   );
 }
