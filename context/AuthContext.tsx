@@ -2,7 +2,6 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Role, SessionUser } from '@/types/database';
-import { getUsersList } from '@/lib/db';
 import { useRouter } from 'next/navigation';
 
 const ROLE_HIERARCHY: Record<Role, number> = {
@@ -50,41 +49,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = async (username: string, password_hash: string) => {
     setIsLoading(true);
     try {
-      const users = await getUsersList();
-      const matched = users.find(
-        (u) => u.username.toLowerCase() === username.toLowerCase().trim()
-      );
+      const response = await fetch('/api/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          username: username.trim(),
+          password: password_hash,
+        }),
+      });
 
-      if (!matched) {
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
         setIsLoading(false);
-        return { success: false, error: 'Username tidak ditemukan.' };
+        return {
+          success: false,
+          error: result.error || 'Login gagal. Silakan coba lagi.',
+        };
       }
 
-      if (!matched.aktif) {
-        setIsLoading(false);
-        return { success: false, error: 'Akun ini telah dinonaktifkan oleh administrator.' };
-      }
-
-      // Simple match for seed / demo password hash
-      if (matched.password_hash !== password_hash) {
-        setIsLoading(false);
-        return { success: false, error: 'Password salah. Silakan coba lagi.' };
-      }
-
-      const sessionUser: SessionUser = {
-        id: matched.id,
-        username: matched.username,
-        nama: matched.nama,
-        role: matched.role,
-      };
-
+      const sessionUser: SessionUser = result.user;
       setUser(sessionUser);
       localStorage.setItem(SESSION_KEY, JSON.stringify(sessionUser));
       setIsLoading(false);
       return { success: true };
-    } catch (err) {
+    } catch (err: any) {
+      console.error('Login error details:', err);
       setIsLoading(false);
-      return { success: false, error: 'Terjadi kesalahan sistem saat verifikasi login.' };
+      return {
+        success: false,
+        error: 'Terjadi kesalahan sistem: ' + (err.message || JSON.stringify(err)),
+      };
     }
   };
 

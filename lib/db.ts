@@ -597,6 +597,7 @@ export async function getKomisiPerStaff(filters?: { startDate?: string; endDate?
 // USERS (KELOLA USER)
 // -------------------------------------------------------------
 export async function getUsersList(): Promise<User[]> {
+  console.log("getUsersList called. supabase is:", !!supabase);
   const { data, error } = await supabase!.from('users').select('*').order('id', { ascending: true });
   if (error) {
     console.error('getUsersList error:', error);
