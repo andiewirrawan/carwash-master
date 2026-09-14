@@ -10,12 +10,15 @@ export const isSupabaseConfigured = Boolean(
   !supabaseAnonKey.includes('your-supabase-anon-key')
 );
 
-export const supabase = isSupabaseConfigured
-  ? createClient(supabaseUrl, supabaseAnonKey, {
-      auth: {
-        persistSession: false,
-        autoRefreshToken: false,
-        detectSessionInUrl: false,
-      },
-    })
-  : null;
+// We ensure supabase is never null by providing placeholder values if not configured.
+// This prevents "Cannot read properties of null (reading 'from')" errors.
+const effectiveUrl = isSupabaseConfigured ? supabaseUrl : 'https://placeholder.supabase.co';
+const effectiveKey = isSupabaseConfigured ? supabaseAnonKey : 'placeholder';
+
+export const supabase = createClient(effectiveUrl, effectiveKey, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
+    detectSessionInUrl: false,
+  },
+});
