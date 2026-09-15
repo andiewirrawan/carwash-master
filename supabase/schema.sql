@@ -244,7 +244,8 @@ create table if not exists daily_closing (
   jumlah_transaksi int default 0,
   closed_by int references users(id) on delete set null,
   ditutup_pada timestamptz default now(),
-  created_at timestamptz default now()
+  created_at timestamptz default now(),
+  constraint uq_daily_closing_tanggal_kasir unique (tanggal, kasir_id)
 );
 
 -- 7. Table: komisi_manual

@@ -1328,8 +1328,12 @@ export async function getDailyClosing(tanggal: string, kasirId?: number): Promis
     id: data.id,
     tanggal: data.tanggal,
     kasir_id: data.kasir_id,
-    total_transaksi: Number(data.total_transaksi || 0),
+    total_transaksi: Number(data.total_transaksi || data.jumlah_transaksi || 0),
     total_omzet: Number(data.total_omzet || 0),
+    total_tunai: Number(data.total_tunai || 0),
+    total_qris: Number(data.total_qris || 0),
+    total_piutang: Number(data.total_piutang || 0),
+    total_promo: Number(data.total_promo || 0),
     ditutup_pada: data.ditutup_pada,
     kasir_nama: (data as any).users?.nama || 'Kasir',
   } as DailyClosing;
@@ -1357,8 +1361,12 @@ export async function getDailyClosingList(tanggal?: string): Promise<DailyClosin
     id: d.id,
     tanggal: d.tanggal,
     kasir_id: d.kasir_id,
-    total_transaksi: Number(d.total_transaksi || 0),
+    total_transaksi: Number(d.total_transaksi || d.jumlah_transaksi || 0),
     total_omzet: Number(d.total_omzet || 0),
+    total_tunai: Number(d.total_tunai || 0),
+    total_qris: Number(d.total_qris || 0),
+    total_piutang: Number(d.total_piutang || 0),
+    total_promo: Number(d.total_promo || 0),
     ditutup_pada: d.ditutup_pada,
     kasir_nama: d.users?.nama || `Kasir #${d.kasir_id}`,
   })) as DailyClosing[];
@@ -1369,20 +1377,56 @@ export async function createDailyClosing(params: {
   kasir_id: number;
   total_transaksi: number;
   total_omzet: number;
+  total_tunai?: number;
+  total_qris?: number;
+  total_piutang?: number;
+  total_promo?: number;
+  closed_by?: number;
+  user_id?: number;
+  user_role?: string;
 }): Promise<DailyClosing> {
+  // First try via server API route for secure validation and RLS compliance
+  try {
+    const res = await fetch('/api/daily-closing', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(params),
+    });
 
+    const result = await res.json();
+    if (res.ok && result.success && result.data) {
+      return result.data as DailyClosing;
+    } else if (result.error) {
+      throw new Error(result.error);
+    }
+  } catch (apiErr: any) {
+    // If error contains specific business message from API, throw it directly
+    if (apiErr.message && !apiErr.message.includes('fetch')) {
+      throw apiErr;
+    }
+    console.warn('API /api/daily-closing fetch fallback, trying direct client insert:', apiErr);
+  }
+
+  // Fallback to direct client-side Supabase insert
+  const payload = {
+    tanggal: params.tanggal,
+    kasir_id: params.kasir_id,
+    total_transaksi: params.total_transaksi,
+    total_omzet: params.total_omzet,
+    total_tunai: params.total_tunai || 0,
+    total_qris: params.total_qris || 0,
+    total_piutang: params.total_piutang || 0,
+    total_promo: params.total_promo || 0,
+    jumlah_transaksi: params.total_transaksi,
+    closed_by: params.closed_by || params.kasir_id,
+    ditutup_pada: new Date().toISOString(),
+  };
 
   const { data, error } = await supabase
     .from('daily_closing')
-    .insert([
-      {
-        tanggal: params.tanggal,
-        kasir_id: params.kasir_id,
-        total_transaksi: params.total_transaksi,
-        total_omzet: params.total_omzet,
-        ditutup_pada: new Date().toISOString(),
-      },
-    ])
+    .insert([payload])
     .select('*, users:kasir_id(nama)')
     .single();
 
@@ -1395,14 +1439,36 @@ export async function createDailyClosing(params: {
     id: data.id,
     tanggal: data.tanggal,
     kasir_id: data.kasir_id,
-    total_transaksi: Number(data.total_transaksi || 0),
+    total_transaksi: Number(data.total_transaksi || data.jumlah_transaksi || 0),
     total_omzet: Number(data.total_omzet || 0),
+    total_tunai: Number(data.total_tunai || 0),
+    total_qris: Number(data.total_qris || 0),
+    total_piutang: Number(data.total_piutang || 0),
+    total_promo: Number(data.total_promo || 0),
     ditutup_pada: data.ditutup_pada,
     kasir_nama: (data as any).users?.nama || 'Kasir',
   } as DailyClosing;
 }
 
-export async function reopenDailyClosing(closingId: number): Promise<boolean> {
+export async function reopenDailyClosing(closingId: number, userId?: number): Promise<boolean> {
+  // First try via server API route
+  try {
+    const url = userId ? `/api/daily-closing?id=${closingId}&user_id=${userId}` : `/api/daily-closing?id=${closingId}`;
+    const res = await fetch(url, {
+      method: 'DELETE',
+    });
+    const result = await res.json();
+    if (res.ok && result.success) {
+      return true;
+    } else if (result.error) {
+      throw new Error(result.error);
+    }
+  } catch (apiErr: any) {
+    if (apiErr.message && !apiErr.message.includes('fetch')) {
+      throw apiErr;
+    }
+    console.warn('API /api/daily-closing DELETE fallback, trying direct client delete:', apiErr);
+  }
 
   const { error } = await supabase.from('daily_closing').delete().eq('id', closingId);
   if (error) {

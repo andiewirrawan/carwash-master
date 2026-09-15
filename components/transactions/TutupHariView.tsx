@@ -100,6 +100,13 @@ export function TutupHariView() {
         kasir_id: user.id,
         total_transaksi: preview.total_selesai,
         total_omzet: preview.total_omzet,
+        total_tunai: preview.breakdown.Tunai,
+        total_qris: preview.breakdown.NonTunai ?? preview.breakdown.Qris ?? 0,
+        total_promo: preview.breakdown.Promo,
+        total_piutang: preview.breakdown.Piutang,
+        closed_by: user.id,
+        user_id: user.id,
+        user_role: user.role,
       });
 
       await loadData();
@@ -120,7 +127,7 @@ export function TutupHariView() {
     if (!conf) return;
 
     try {
-      await reopenDailyClosing(closingId);
+      await reopenDailyClosing(closingId, user?.id);
       await loadData();
       alert('Shift berhasil dibuka kembali.');
     } catch (err: any) {
