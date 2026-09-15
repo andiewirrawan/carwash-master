@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 
 export function UsersContent() {
-  const { isSistemOwner } = useAuth();
+  const { isSistemOwner, user: currentSessionUser } = useAuth();
 
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -107,52 +107,71 @@ export function UsersContent() {
     setSaving(true);
     try {
       if (editUser) {
-        await updateUser(editUser.id, {
-          username: username.trim(),
-          nama: nama.trim(),
-          role,
-          aktif,
-          ...(password ? { password_hash: password } : {}),
-        });
+        await updateUser(
+          editUser.id,
+          {
+            username: username.trim(),
+            nama: nama.trim(),
+            role,
+            aktif,
+            ...(password ? { password_hash: password } : {}),
+          },
+          currentSessionUser?.id
+        );
       } else {
-        await addUser({
-          username: username.trim(),
-          password_hash: password,
-          nama: nama.trim(),
-          role,
-          aktif,
-        });
+        await addUser(
+          {
+            username: username.trim(),
+            password_hash: password,
+            nama: nama.trim(),
+            role,
+            aktif,
+          },
+          currentSessionUser?.id
+        );
       }
 
       setModalOpen(false);
       await loadData();
-    } catch (err) {
-      setFormError('Gagal menyimpan data user.');
+    } catch (err: any) {
+      setFormError(err?.message || 'Gagal menyimpan data user.');
     } finally {
       setSaving(false);
     }
   };
 
   const handleToggleAktif = async (u: User) => {
-    await updateUser(u.id, { aktif: !u.aktif });
-    await loadData();
+    try {
+      await updateUser(u.id, { aktif: !u.aktif }, currentSessionUser?.id);
+      await loadData();
+    } catch (err: any) {
+      alert(err?.message || 'Gagal mengubah status aktif user.');
+    }
   };
 
   const handleResetPasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!resetModalUser || !newPassword.trim()) return;
 
-    await resetPassword(resetModalUser.id, newPassword);
-    setResetModalUser(null);
-    setNewPassword('');
-    await loadData();
+    try {
+      await resetPassword(resetModalUser.id, newPassword, currentSessionUser?.id);
+      setResetModalUser(null);
+      setNewPassword('');
+      await loadData();
+    } catch (err: any) {
+      alert(err?.message || 'Gagal mereset password.');
+    }
   };
 
   const handleDelete = async () => {
     if (deleteId === null) return;
-    await deleteUser(deleteId);
-    setDeleteId(null);
-    await loadData();
+    try {
+      await deleteUser(deleteId, currentSessionUser?.id);
+      setDeleteId(null);
+      await loadData();
+    } catch (err: any) {
+      alert(err?.message || 'Gagal menghapus user.');
+    }
   };
 
   const filteredUsers = useMemo(() => {

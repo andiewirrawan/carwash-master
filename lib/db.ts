@@ -1222,9 +1222,21 @@ export async function getKomisiPerStaff(filters?: { startDate?: string; endDate?
 }
 
 // -------------------------------------------------------------
-// USERS (KELOLA USER)
+// USERS (KELOLA USER - KHUSUS SISTEM OWNER)
 // -------------------------------------------------------------
 export async function getUsersList(): Promise<User[]> {
+  try {
+    const res = await fetch('/api/users');
+    if (res.ok) {
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data)) {
+        return json.data as User[];
+      }
+    }
+  } catch {
+    // fallback to supabase client
+  }
+
   const { data, error } = await supabase.from('users').select('*').order('id', { ascending: true });
   if (error) {
     console.error('getUsersList error:', error);
@@ -1233,28 +1245,187 @@ export async function getUsersList(): Promise<User[]> {
   return data as User[];
 }
 
-export async function addUser(user: Omit<User, 'id' | 'created_at'>): Promise<User> {
-  const { data, error } = await supabase.from('users').insert([user]).select().single();
-  if (error) throw error;
-  return data as User;
+export async function addUser(
+  user: Omit<User, 'id' | 'created_at'>,
+  requestingUserId?: number | null
+): Promise<User> {
+  // 1. Try secure server-side API
+  try {
+    const res = await fetch('/api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...user,
+        requesting_user_id: requestingUserId,
+      }),
+    });
+    const json = await res.json();
+    if (!res.ok || !json.success) {
+      throw new Error(json.error || 'Gagal menyimpan data user.');
+    }
+    return json.data as User;
+  } catch (apiErr: any) {
+    // If it's a validation / authorization error from the API, rethrow directly
+    if (apiErr.message && !apiErr.message.includes('fetch')) {
+      throw apiErr;
+    }
+
+    // 2. Fallback to Supabase RPC
+    if (requestingUserId) {
+      const { data: rpcData, error: rpcError } = await supabase.rpc('sp_add_user_sistem_owner', {
+        p_requesting_user_id: requestingUserId,
+        p_username: user.username,
+        p_password_hash: user.password_hash,
+        p_nama: user.nama,
+        p_role: user.role,
+        p_aktif: user.aktif !== undefined ? user.aktif : true,
+      });
+
+      if (!rpcError && rpcData) {
+        return rpcData as User;
+      }
+      if (rpcError) {
+        throw new Error(rpcError.message);
+      }
+    }
+
+    // 3. Fallback to direct client insert
+    const { data, error } = await supabase.from('users').insert([user]).select().single();
+    if (error) throw new Error(error.message || 'Gagal menyimpan data user ke database.');
+    return data as User;
+  }
 }
 
-export async function updateUser(id: number, item: Partial<User>): Promise<User | null> {
-  const { data, error } = await supabase.from('users').update(item).eq('id', id).select().single();
-  if (error) throw error;
-  return data as User;
+export async function updateUser(
+  id: number,
+  item: Partial<User>,
+  requestingUserId?: number | null
+): Promise<User | null> {
+  // 1. Try secure server-side API
+  try {
+    const res = await fetch('/api/users', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id,
+        ...item,
+        requesting_user_id: requestingUserId,
+      }),
+    });
+    const json = await res.json();
+    if (!res.ok || !json.success) {
+      throw new Error(json.error || 'Gagal memperbarui data user.');
+    }
+    return json.data as User;
+  } catch (apiErr: any) {
+    if (apiErr.message && !apiErr.message.includes('fetch')) {
+      throw apiErr;
+    }
+
+    // 2. Fallback to Supabase RPC
+    if (requestingUserId) {
+      const { data: rpcData, error: rpcError } = await supabase.rpc('sp_update_user_sistem_owner', {
+        p_requesting_user_id: requestingUserId,
+        p_target_user_id: id,
+        p_username: item.username || null,
+        p_nama: item.nama || null,
+        p_role: item.role || null,
+        p_aktif: item.aktif !== undefined ? item.aktif : null,
+        p_password_hash: item.password_hash || null,
+      });
+
+      if (!rpcError && rpcData) {
+        return rpcData as User;
+      }
+      if (rpcError) {
+        throw new Error(rpcError.message);
+      }
+    }
+
+    // 3. Fallback direct update
+    const { data, error } = await supabase.from('users').update(item).eq('id', id).select().single();
+    if (error) throw new Error(error.message || 'Gagal mengubah data user.');
+    return data as User;
+  }
 }
 
-export async function resetPassword(id: number, newPasswordHash: string): Promise<boolean> {
-  const { error } = await supabase.from('users').update({ password_hash: newPasswordHash }).eq('id', id);
-  if (error) throw error;
-  return true;
+export async function resetPassword(
+  id: number,
+  newPasswordHash: string,
+  requestingUserId?: number | null
+): Promise<boolean> {
+  // 1. Try secure server-side API
+  try {
+    const res = await fetch('/api/users', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id,
+        password_hash: newPasswordHash,
+        requesting_user_id: requestingUserId,
+      }),
+    });
+    const json = await res.json();
+    if (!res.ok || !json.success) {
+      throw new Error(json.error || 'Gagal mereset password.');
+    }
+    return true;
+  } catch (apiErr: any) {
+    if (apiErr.message && !apiErr.message.includes('fetch')) {
+      throw apiErr;
+    }
+
+    // 2. Fallback to RPC
+    if (requestingUserId) {
+      const { error: rpcError } = await supabase.rpc('sp_reset_password_sistem_owner', {
+        p_requesting_user_id: requestingUserId,
+        p_target_user_id: id,
+        p_new_password_hash: newPasswordHash,
+      });
+      if (rpcError) throw new Error(rpcError.message);
+      return true;
+    }
+
+    const { error } = await supabase.from('users').update({ password_hash: newPasswordHash }).eq('id', id);
+    if (error) throw new Error(error.message);
+    return true;
+  }
 }
 
-export async function deleteUser(id: number): Promise<boolean> {
-  const { error } = await supabase.from('users').delete().eq('id', id);
-  if (error) throw error;
-  return true;
+export async function deleteUser(
+  id: number,
+  requestingUserId?: number | null
+): Promise<boolean> {
+  // 1. Try secure server-side API
+  try {
+    const query = requestingUserId ? `?id=${id}&requesting_user_id=${requestingUserId}` : `?id=${id}`;
+    const res = await fetch(`/api/users${query}`, {
+      method: 'DELETE',
+    });
+    const json = await res.json();
+    if (!res.ok || !json.success) {
+      throw new Error(json.error || 'Gagal menghapus user.');
+    }
+    return true;
+  } catch (apiErr: any) {
+    if (apiErr.message && !apiErr.message.includes('fetch')) {
+      throw apiErr;
+    }
+
+    // 2. Fallback to RPC
+    if (requestingUserId) {
+      const { error: rpcError } = await supabase.rpc('sp_delete_user_sistem_owner', {
+        p_requesting_user_id: requestingUserId,
+        p_target_user_id: id,
+      });
+      if (rpcError) throw new Error(rpcError.message);
+      return true;
+    }
+
+    const { error } = await supabase.from('users').delete().eq('id', id);
+    if (error) throw new Error(error.message);
+    return true;
+  }
 }
 
 export const SUPABASE_MIGRATION_SQL = `
