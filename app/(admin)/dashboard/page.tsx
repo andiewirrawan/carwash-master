@@ -776,7 +776,7 @@ export default function DashboardOwnerPage() {
                         className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ${
                           trx.metode_bayar === 'Tunai'
                             ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                            : trx.metode_bayar === 'Qris'
+                            : trx.metode_bayar === 'Non Tunai' || trx.metode_bayar === 'Qris'
                             ? 'bg-blue-50 text-blue-700 border border-blue-200'
                             : 'bg-amber-50 text-amber-700 border border-amber-200'
                         }`}

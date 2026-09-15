@@ -649,7 +649,7 @@ export async function assignTransactionStaff(
 // C. Pembayaran ("Pembayaran")
 export async function completeTransactionPayment(params: {
   transactionId: number;
-  metode_bayar: 'Tunai' | 'Qris' | 'Promo' | 'Piutang';
+  metode_bayar: 'Tunai' | 'Non Tunai' | string;
   keterangan?: string;
 }): Promise<Transaction> {
 
@@ -1415,7 +1415,7 @@ export async function reopenDailyClosing(closingId: number): Promise<boolean> {
 export async function getKasirClosingPreview(tanggal: string, kasirId: number): Promise<{
   total_selesai: number;
   total_omzet: number;
-  breakdown: { Tunai: number; Qris: number; Promo: number; Piutang: number; Lainnya: number };
+  breakdown: { Tunai: number; NonTunai: number; Qris: number; Promo: number; Piutang: number; Lainnya: number };
   transaksi_proses: Transaction[];
   sudah_tutup: boolean;
   closing_info: DailyClosing | null;
@@ -1424,7 +1424,7 @@ export async function getKasirClosingPreview(tanggal: string, kasirId: number): 
     return {
       total_selesai: 0,
       total_omzet: 0,
-      breakdown: { Tunai: 0, Qris: 0, Promo: 0, Piutang: 0, Lainnya: 0 },
+      breakdown: { Tunai: 0, NonTunai: 0, Qris: 0, Promo: 0, Piutang: 0, Lainnya: 0 },
       transaksi_proses: [],
       sudah_tutup: false,
       closing_info: null,
@@ -1445,18 +1445,25 @@ export async function getKasirClosingPreview(tanggal: string, kasirId: number): 
   const selesaiList = trxs.filter((t) => t.status_pengerjaan === 'selesai');
   const prosesList = trxs.filter((t) => t.status_pengerjaan === 'proses');
 
-  const breakdown = { Tunai: 0, Qris: 0, Promo: 0, Piutang: 0, Lainnya: 0 };
+  const breakdown = { Tunai: 0, NonTunai: 0, Qris: 0, Promo: 0, Piutang: 0, Lainnya: 0 };
   let total_omzet = 0;
 
   for (const t of selesaiList) {
     const val = Number(t.harga || 0);
     total_omzet += val;
-    const mb = (t.metode_bayar || '').toLowerCase();
-    if (mb === 'tunai') breakdown.Tunai += val;
-    else if (mb === 'qris') breakdown.Qris += val;
-    else if (mb === 'promo') breakdown.Promo += val;
-    else if (mb === 'piutang') breakdown.Piutang += val;
-    else breakdown.Lainnya += val;
+    const mb = (t.metode_bayar || '').toLowerCase().trim();
+    if (mb === 'tunai') {
+      breakdown.Tunai += val;
+    } else if (mb === 'non tunai' || mb === 'nontunai' || mb === 'qris' || mb === 'transfer') {
+      breakdown.NonTunai += val;
+      breakdown.Qris += val;
+    } else if (mb === 'promo') {
+      breakdown.Promo += val;
+    } else if (mb === 'piutang') {
+      breakdown.Piutang += val;
+    } else {
+      breakdown.Lainnya += val;
+    }
   }
 
   return {

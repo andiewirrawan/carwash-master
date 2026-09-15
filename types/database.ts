@@ -84,7 +84,7 @@ export interface Transaction {
   harga: number; // Snapshot harga saat transaksi terjadi
   harga_standar?: number;
   harga_disesuaikan?: boolean;
-  metode_bayar?: 'Tunai' | 'Qris' | 'Promo' | 'Piutang' | string | null;
+  metode_bayar?: 'Tunai' | 'Non Tunai' | string | null;
   status_piutang?: 'belum_lunas' | 'lunas' | null;
   tanggal_lunas?: string | null;
   keterangan?: string | null;

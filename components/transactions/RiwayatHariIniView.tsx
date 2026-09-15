@@ -424,11 +424,17 @@ export function RiwayatHariIniView() {
 
                       <td className="p-3.5 whitespace-nowrap">
                         {trx.metode_bayar ? (
-                          <span className="font-bold uppercase text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md text-[11px]">
+                          <span
+                            className={`font-bold uppercase px-2 py-0.5 rounded-md text-[11px] border ${
+                              trx.metode_bayar === 'Tunai'
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                : 'bg-blue-50 text-blue-800 border-blue-200'
+                            }`}
+                          >
                             {trx.metode_bayar}
                           </span>
                         ) : (
-                          <span className="text-slate-600 italic">Belum Bayar</span>
+                          <span className="text-slate-400 italic text-xs">Belum Bayar</span>
                         )}
                       </td>
 
@@ -553,9 +559,7 @@ export function RiwayatHariIniView() {
                   className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white font-medium"
                 >
                   <option value="Tunai">Tunai</option>
-                  <option value="Qris">Qris</option>
-                  <option value="Promo">Promo</option>
-                  <option value="Piutang">Piutang</option>
+                  <option value="Non Tunai">Non Tunai</option>
                 </select>
               </div>
 

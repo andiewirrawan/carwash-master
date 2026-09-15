@@ -11,9 +11,7 @@ import { useAuth } from '@/context/AuthContext';
 import { formatNominal, formatDate } from '@/lib/format';
 import {
   Banknote,
-  CreditCard,
   QrCode,
-  Gift,
   CheckCircle2,
   AlertCircle,
   Clock,
@@ -42,7 +40,7 @@ export function PembayaranView({ onNavigateStep, preSelectedTrxId }: PembayaranV
 
   // Payment Modal
   const [selectedTrx, setSelectedTrx] = useState<Transaction | null>(null);
-  const [metodeBayar, setMetodeBayar] = useState<'Tunai' | 'Qris' | 'Promo' | 'Piutang'>('Tunai');
+  const [metodeBayar, setMetodeBayar] = useState<'Tunai' | 'Non Tunai'>('Tunai');
   const [keteranganBayar, setKeteranganBayar] = useState<string>('');
   const [isSubmittingPayment, setIsSubmittingPayment] = useState<boolean>(false);
 
@@ -159,7 +157,7 @@ export function PembayaranView({ onNavigateStep, preSelectedTrxId }: PembayaranV
             </span>
           </div>
           <p className="text-xs text-slate-600 mt-1 ml-9">
-            Pilih metode pembayaran (Tunai, QRIS, Promo, Piutang) lalu cetak struk untuk menyelesaikan transaksi.
+            Pilih metode pembayaran (Tunai atau Non Tunai) lalu selesaikan transaksi dan cetak struk.
           </p>
         </div>
 
@@ -392,106 +390,58 @@ export function PembayaranView({ onNavigateStep, preSelectedTrxId }: PembayaranV
                 </div>
               )}
 
-              {/* PAYMENT METHOD SELECTOR */}
+              {/* PAYMENT METHOD SELECTOR: HANYA 2 PILIHAN (TUNAI & NON TUNAI) */}
               <div>
                 <label className="block text-xs font-bold text-slate-800 uppercase mb-2">
                   PILIH METODE PEMBAYARAN <span className="text-red-500">*</span>
                 </label>
 
-                <div className="grid grid-cols-2 gap-2.5">
-                  {/* Tunai */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* 1. Tunai */}
                   <button
                     id="btn-method-tunai"
                     type="button"
                     onClick={() => setMetodeBayar('Tunai')}
-                    className={`p-3.5 rounded-xl border text-left flex items-center gap-3 transition-all ${
+                    className={`p-4 rounded-2xl border text-left flex items-center gap-3.5 transition-all cursor-pointer ${
                       metodeBayar === 'Tunai'
-                        ? 'bg-emerald-50 border-emerald-600 text-emerald-950 ring-2 ring-emerald-600'
-                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                        ? 'bg-emerald-50/90 border-emerald-600 text-emerald-950 ring-2 ring-emerald-600 shadow-xs'
+                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50/80 hover:border-slate-300'
                     }`}
                   >
                     <div
-                      className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
-                        metodeBayar === 'Tunai' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600'
+                      className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 transition-colors ${
+                        metodeBayar === 'Tunai' ? 'bg-emerald-600 text-white shadow-xs' : 'bg-slate-100 text-slate-600'
                       }`}
                     >
-                      <Banknote className="w-5 h-5" />
+                      <Banknote className="w-6 h-6" />
                     </div>
                     <div>
-                      <p className="text-xs font-bold">Tunai (Cash)</p>
-                      <p className="text-[10px] text-slate-600">Uang tunai</p>
+                      <p className="text-sm font-bold text-slate-900">Tunai</p>
+                      <p className="text-xs text-slate-500 mt-0.5">Pembayaran menggunakan uang cash</p>
                     </div>
                   </button>
 
-                  {/* QRIS */}
+                  {/* 2. Non Tunai */}
                   <button
-                    id="btn-method-qris"
+                    id="btn-method-nontunai"
                     type="button"
-                    onClick={() => setMetodeBayar('Qris')}
-                    className={`p-3.5 rounded-xl border text-left flex items-center gap-3 transition-all ${
-                      metodeBayar === 'Qris'
-                        ? 'bg-blue-50 border-blue-600 text-blue-950 ring-2 ring-blue-600'
-                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                    onClick={() => setMetodeBayar('Non Tunai')}
+                    className={`p-4 rounded-2xl border text-left flex items-center gap-3.5 transition-all cursor-pointer ${
+                      metodeBayar === 'Non Tunai'
+                        ? 'bg-blue-50/90 border-blue-600 text-blue-950 ring-2 ring-blue-600 shadow-xs'
+                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50/80 hover:border-slate-300'
                     }`}
                   >
                     <div
-                      className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
-                        metodeBayar === 'Qris' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'
+                      className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 transition-colors ${
+                        metodeBayar === 'Non Tunai' ? 'bg-blue-600 text-white shadow-xs' : 'bg-slate-100 text-slate-600'
                       }`}
                     >
-                      <QrCode className="w-5 h-5" />
+                      <QrCode className="w-6 h-6" />
                     </div>
                     <div>
-                      <p className="text-xs font-bold">QRIS / Transfer</p>
-                      <p className="text-[10px] text-slate-600">Scan barcode / bank</p>
-                    </div>
-                  </button>
-
-                  {/* Promo */}
-                  <button
-                    id="btn-method-promo"
-                    type="button"
-                    onClick={() => setMetodeBayar('Promo')}
-                    className={`p-3.5 rounded-xl border text-left flex items-center gap-3 transition-all ${
-                      metodeBayar === 'Promo'
-                        ? 'bg-purple-50 border-purple-600 text-purple-950 ring-2 ring-purple-600'
-                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-                    }`}
-                  >
-                    <div
-                      className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
-                        metodeBayar === 'Promo' ? 'bg-purple-600 text-white' : 'bg-slate-100 text-slate-600'
-                      }`}
-                    >
-                      <Gift className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <p className="text-xs font-bold">Promo / Voucher</p>
-                      <p className="text-[10px] text-slate-600">Kupon gratis / diskon</p>
-                    </div>
-                  </button>
-
-                  {/* Piutang */}
-                  <button
-                    id="btn-method-piutang"
-                    type="button"
-                    onClick={() => setMetodeBayar('Piutang')}
-                    className={`p-3.5 rounded-xl border text-left flex items-center gap-3 transition-all ${
-                      metodeBayar === 'Piutang'
-                        ? 'bg-amber-50 border-amber-600 text-amber-950 ring-2 ring-amber-600'
-                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-                    }`}
-                  >
-                    <div
-                      className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
-                        metodeBayar === 'Piutang' ? 'bg-amber-600 text-white' : 'bg-slate-100 text-slate-600'
-                      }`}
-                    >
-                      <CreditCard className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <p className="text-xs font-bold">Piutang</p>
-                      <p className="text-[10px] text-slate-600">Bayar nanti / tagihan</p>
+                      <p className="text-sm font-bold text-slate-900">Non Tunai</p>
+                      <p className="text-xs text-slate-500 mt-0.5">QRIS, transfer, & pembayaran digital</p>
                     </div>
                   </button>
                 </div>

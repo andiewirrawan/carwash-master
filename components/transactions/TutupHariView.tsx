@@ -41,14 +41,14 @@ export function TutupHariView() {
   const [preview, setPreview] = useState<{
     total_selesai: number;
     total_omzet: number;
-    breakdown: { Tunai: number; Qris: number; Promo: number; Piutang: number; Lainnya: number };
+    breakdown: { Tunai: number; NonTunai?: number; Qris: number; Promo: number; Piutang: number; Lainnya: number };
     transaksi_proses: Transaction[];
     sudah_tutup: boolean;
     closing_info: DailyClosing | null;
   }>({
     total_selesai: 0,
     total_omzet: 0,
-    breakdown: { Tunai: 0, Qris: 0, Promo: 0, Piutang: 0, Lainnya: 0 },
+    breakdown: { Tunai: 0, NonTunai: 0, Qris: 0, Promo: 0, Piutang: 0, Lainnya: 0 },
     transaksi_proses: [],
     sudah_tutup: false,
     closing_info: null,
@@ -255,48 +255,26 @@ export function TutupHariView() {
               Rincian Per Metode Pembayaran
             </label>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {/* Tunai */}
-              <div className="p-3.5 rounded-xl border border-slate-200 bg-white">
-                <div className="flex items-center gap-1.5 text-slate-600 text-xs font-semibold">
+              <div className="p-4 rounded-xl border border-slate-200 bg-white">
+                <div className="flex items-center gap-2 text-slate-600 text-xs font-semibold">
                   <Banknote className="w-4 h-4 text-emerald-600" />
-                  <span>Tunai</span>
+                  <span>Tunai (Cash)</span>
                 </div>
-                <p className="text-base font-black text-slate-900 mt-1">
+                <p className="text-lg font-black text-slate-900 mt-1">
                   Rp {formatNominal(preview.breakdown.Tunai)}
                 </p>
               </div>
 
-              {/* QRIS */}
-              <div className="p-3.5 rounded-xl border border-slate-200 bg-white">
-                <div className="flex items-center gap-1.5 text-slate-600 text-xs font-semibold">
+              {/* Non Tunai */}
+              <div className="p-4 rounded-xl border border-slate-200 bg-white">
+                <div className="flex items-center gap-2 text-slate-600 text-xs font-semibold">
                   <QrCode className="w-4 h-4 text-blue-600" />
-                  <span>QRIS / Transfer</span>
+                  <span>Non Tunai (QRIS / Transfer / Digital)</span>
                 </div>
-                <p className="text-base font-black text-slate-900 mt-1">
-                  Rp {formatNominal(preview.breakdown.Qris)}
-                </p>
-              </div>
-
-              {/* Promo */}
-              <div className="p-3.5 rounded-xl border border-slate-200 bg-white">
-                <div className="flex items-center gap-1.5 text-slate-600 text-xs font-semibold">
-                  <Gift className="w-4 h-4 text-purple-600" />
-                  <span>Promo / Kupon</span>
-                </div>
-                <p className="text-base font-black text-slate-900 mt-1">
-                  Rp {formatNominal(preview.breakdown.Promo)}
-                </p>
-              </div>
-
-              {/* Piutang */}
-              <div className="p-3.5 rounded-xl border border-slate-200 bg-white">
-                <div className="flex items-center gap-1.5 text-slate-600 text-xs font-semibold">
-                  <CreditCard className="w-4 h-4 text-amber-600" />
-                  <span>Piutang</span>
-                </div>
-                <p className="text-base font-black text-slate-900 mt-1">
-                  Rp {formatNominal(preview.breakdown.Piutang)}
+                <p className="text-lg font-black text-slate-900 mt-1">
+                  Rp {formatNominal(preview.breakdown.NonTunai ?? preview.breakdown.Qris ?? 0)}
                 </p>
               </div>
             </div>
