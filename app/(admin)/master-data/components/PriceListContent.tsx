@@ -15,8 +15,6 @@ import {
   Check,
   Filter,
   AlertCircle,
-  ChevronLeft,
-  ChevronRight,
   ShieldAlert,
   Coins,
 } from 'lucide-react';
@@ -52,11 +50,6 @@ export function PriceListContent() {
   ]);
   const [formError, setFormError] = useState<string>('');
   const [saving, setSaving] = useState<boolean>(false);
-
-  // Pagination states
-  const [currentPage, setCurrentPage] = useState<number>(1);
-  const [pageSize] = useState<number>(6);
-  const [jumpPageInput, setJumpPageInput] = useState<string>('1');
 
   const loadData = async () => {
     setLoading(true);
@@ -249,22 +242,6 @@ export function PriceListContent() {
     });
   }, [prices, search, filterVehicle]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredPrices.length / pageSize));
-  const currentItems = useMemo(() => {
-    const start = (currentPage - 1) * pageSize;
-    return filteredPrices.slice(start, start + pageSize);
-  }, [filteredPrices, currentPage, pageSize]);
-
-  const handleJumpPage = (e: React.FormEvent) => {
-    e.preventDefault();
-    const p = parseInt(jumpPageInput, 10);
-    if (!isNaN(p) && p >= 1 && p <= totalPages) {
-      setCurrentPage(p);
-    } else {
-      setJumpPageInput(String(currentPage));
-    }
-  };
-
   if (!canAccess) {
     return (
       <div className="mx-auto max-w-2xl py-12 px-4 text-center">
@@ -307,7 +284,6 @@ export function PriceListContent() {
             value={search}
             onChange={(e) => {
               setSearch(e.target.value);
-              setCurrentPage(1);
             }}
             className="w-full rounded-lg border border-slate-300 py-2 pl-9 pr-4 text-sm text-slate-800 focus:border-[#0A2A5E] focus:outline-hidden"
           />
@@ -319,7 +295,6 @@ export function PriceListContent() {
             value={filterVehicle}
             onChange={(e) => {
               setFilterVehicle(e.target.value);
-              setCurrentPage(1);
             }}
             className="w-full rounded-lg border border-slate-300 py-2 px-3 text-sm text-slate-800 focus:border-[#0A2A5E] focus:outline-hidden"
           >
@@ -352,14 +327,14 @@ export function PriceListContent() {
                     <div className="inline-block h-6 w-6 animate-spin rounded-full border-2 border-[#0A2A5E] border-t-transparent" />
                   </td>
                 </tr>
-              ) : currentItems.length === 0 ? (
+              ) : filteredPrices.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="py-12 text-center text-slate-500">
                     Tidak ada data harga yang cocok.
                   </td>
                 </tr>
               ) : (
-                currentItems.map((item) => (
+                filteredPrices.map((item) => (
                   <tr key={item.id} className="transition hover:bg-slate-50">
                     <td className="whitespace-nowrap px-4 py-3 font-medium text-slate-900">
                       <span className="inline-flex items-center rounded-md bg-blue-50 px-2 py-1 text-xs font-semibold text-[#0A2A5E]">
@@ -418,55 +393,8 @@ export function PriceListContent() {
           </table>
         </div>
 
-        <div className="flex flex-col gap-3 border-t border-slate-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-2 text-xs text-slate-600">
-            <span>Halaman {currentPage} dari {totalPages} ({filteredPrices.length} data)</span>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <form onSubmit={handleJumpPage} className="flex items-center gap-1.5 text-xs text-slate-600">
-              <span>Ke halaman:</span>
-              <input
-                type="number"
-                min="1"
-                max={totalPages}
-                value={jumpPageInput}
-                onChange={(e) => setJumpPageInput(e.target.value)}
-                className="w-14 rounded border border-slate-300 px-2 py-1 text-center text-xs focus:border-[#0A2A5E]"
-              />
-              <button
-                type="submit"
-                className="rounded border border-slate-300 bg-slate-50 px-2.5 py-1 text-xs font-semibold"
-              >
-                Go
-              </button>
-            </form>
-
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => {
-                  const prev = Math.max(1, currentPage - 1);
-                  setCurrentPage(prev);
-                  setJumpPageInput(String(prev));
-                }}
-                disabled={currentPage === 1}
-                className="rounded border border-slate-300 p-1 disabled:opacity-40"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </button>
-              <button
-                onClick={() => {
-                  const next = Math.min(totalPages, currentPage + 1);
-                  setCurrentPage(next);
-                  setJumpPageInput(String(next));
-                }}
-                disabled={currentPage === totalPages}
-                className="rounded border border-slate-300 p-1 disabled:opacity-40"
-              >
-                <ChevronRight className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
+        <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3 bg-slate-50 text-xs text-slate-600">
+          <span>Menampilkan seluruh <strong>{filteredPrices.length}</strong> paket layanan (Dapat di-scroll langsung ke bawah)</span>
         </div>
       </div>
 
