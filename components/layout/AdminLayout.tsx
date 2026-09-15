@@ -34,6 +34,7 @@ import {
   CalendarDays,
   Banknote,
   Sparkles,
+  Settings,
 } from 'lucide-react';
 
 interface MenuItem {
@@ -79,6 +80,12 @@ const MENU_ITEMS: MenuItem[] = [
     title: 'Master Data',
     href: '/master-data',
     icon: Database,
+    minRole: 'spv',
+  },
+  {
+    title: 'Pengaturan',
+    href: '/settings',
+    icon: Settings,
     minRole: 'spv',
   },
 ];
@@ -165,6 +172,7 @@ function AdminLayoutMain({ children }: { children: React.ReactNode }) {
     if (pathname.includes('/multiplier')) return ['Home', 'Data Staff', 'Riwayat Komisi Multiplier'];
     if (pathname === '/staff-multipliers') return ['Home', 'Riwayat Komisi Multiplier'];
     if (pathname === '/users') return ['Home', 'Kelola User'];
+    if (pathname === '/settings' || pathname === '/pengaturan') return ['Home', 'Pengaturan'];
     if (pathname === '/backup') return ['Home', 'Backup & PITR Storage'];
     return ['Home', 'Carwash Master'];
   };
@@ -243,7 +251,8 @@ function AdminLayoutMain({ children }: { children: React.ReactNode }) {
                 (menu.href === '/customers' && pathname.startsWith('/customers')) ||
                 (menu.href === '/reports' && pathname.startsWith('/reports')) ||
                 (menu.href === '/absensi' && pathname.startsWith('/absensi')) ||
-                (menu.href === '/master-data' && pathname.startsWith('/master-data'));
+                (menu.href === '/master-data' && pathname.startsWith('/master-data')) ||
+                (menu.href === '/settings' && (pathname.startsWith('/settings') || pathname.startsWith('/pengaturan')));
 
               return (
                 <Link

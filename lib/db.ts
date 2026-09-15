@@ -1478,6 +1478,30 @@ export async function reopenDailyClosing(closingId: number, userId?: number): Pr
   return true;
 }
 
+export async function resetCarwashData(params: {
+  userId: number;
+  confirmPhrase: string;
+}): Promise<{ success: boolean; message: string; details?: any }> {
+  const res = await fetch('/api/reset-data', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      user_id: params.userId,
+      confirm_phrase: params.confirmPhrase,
+    }),
+  });
+
+  const result = await res.json();
+  if (!res.ok || !result.success) {
+    throw new Error(result.error || 'Gagal mereset data aplikasi.');
+  }
+
+  return result;
+}
+
+
 export async function getKasirClosingPreview(tanggal: string, kasirId: number): Promise<{
   total_selesai: number;
   total_omzet: number;

@@ -3,23 +3,29 @@
 import React, { useState } from 'react';
 import { CategoryNav } from '@/components/layout/CategoryNav';
 import { AdminLayout } from '@/components/layout/AdminLayout';
+import { useAuth } from '@/context/AuthContext';
 import { PriceListContent } from './components/PriceListContent';
 import { VehiclesContent } from './components/VehiclesContent';
 import { StaffContent } from './components/StaffContent';
 import { StaffMultipliersContent } from './components/StaffMultipliersContent';
 import { UsersContent } from './components/UsersContent';
-import { Tag, Car, Users, Percent, ShieldCheck } from 'lucide-react';
-
-const CATEGORIES = [
-  { id: 'price-list', label: 'Harga & Komisi', icon: Tag },
-  { id: 'vehicles', label: 'Jenis Kendaraan', icon: Car },
-  { id: 'staff', label: 'Data Staff', icon: Users },
-  { id: 'multipliers', label: 'Riwayat Multiplier', icon: Percent },
-  { id: 'users', label: 'Akses Login (Wiro)', icon: ShieldCheck },
-];
+import { ResetDataContent } from '../settings/components/ResetDataContent';
+import { Tag, Car, Users, Percent, ShieldCheck, ShieldAlert } from 'lucide-react';
 
 export default function MasterDataPage() {
+  const { isSistemOwner } = useAuth();
   const [activeCategory, setActiveCategory] = useState('price-list');
+
+  const categories = [
+    { id: 'price-list', label: 'Harga & Komisi', icon: Tag },
+    { id: 'vehicles', label: 'Jenis Kendaraan', icon: Car },
+    { id: 'staff', label: 'Data Staff', icon: Users },
+    { id: 'multipliers', label: 'Riwayat Multiplier', icon: Percent },
+    { id: 'users', label: 'Akses Login (Wiro)', icon: ShieldCheck },
+    ...(isSistemOwner
+      ? [{ id: 'reset-data', label: 'Reset Data', icon: ShieldAlert }]
+      : []),
+  ];
 
   const renderContent = () => {
     switch (activeCategory) {
@@ -33,6 +39,8 @@ export default function MasterDataPage() {
         return <StaffMultipliersContent />;
       case 'users':
         return <UsersContent />;
+      case 'reset-data':
+        return <ResetDataContent />;
       default:
         return <PriceListContent />;
     }
@@ -42,9 +50,9 @@ export default function MasterDataPage() {
     <AdminLayout>
       <div className="flex h-full flex-col gap-6 lg:flex-row">
         {/* Left: Category Navigation */}
-        <div className="w-full lg:w-64">
+        <div className="w-full lg:w-64 shrink-0">
           <CategoryNav
-            categories={CATEGORIES}
+            categories={categories}
             activeCategory={activeCategory}
             onSelect={setActiveCategory}
             title="Master Data"
@@ -59,3 +67,4 @@ export default function MasterDataPage() {
     </AdminLayout>
   );
 }
+
