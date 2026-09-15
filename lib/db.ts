@@ -485,26 +485,72 @@ export async function createMobilMasuk(params: {
     finalKeterangan = finalKeterangan ? `${finalKeterangan} (Harga disesuaikan)` : 'Harga disesuaikan';
   }
 
+  // Ambil data price list untuk snapshot denormalisasi
+  let paket_nama = 'Cuci';
+  let kendaraan = 'Mobil';
+  let tipe = 'Medium';
+  if (params.price_list_id) {
+    const { data: pl } = await supabase
+      .from('price_list')
+      .select('paket, kendaraan, tipe')
+      .eq('id', params.price_list_id)
+      .maybeSingle();
+    if (pl) {
+      if (pl.paket) paket_nama = pl.paket;
+      if (pl.kendaraan) kendaraan = pl.kendaraan;
+      if (pl.tipe) tipe = pl.tipe;
+    }
+  }
+
   // 3. Simpan transaksi baru: status_pengerjaan='proses', metode_bayar=NULL, tanpa washer
-  const { data: trx, error: trxErr } = await supabase
+  const trxPayload: any = {
+    no_transaksi,
+    no_polisi: params.nopol.toUpperCase().trim(),
+    kendaraan,
+    tipe,
+    paket_nama,
+    tanggal: trxDate,
+    waktu,
+    customer_id: customerId,
+    price_list_id: params.price_list_id,
+    harga: Number(params.harga),
+    metode_bayar: null,
+    keterangan: finalKeterangan || null,
+    kasir_id: params.kasir_id,
+    status: 'aktif',
+    status_pengerjaan: 'proses',
+    waktu_selesai: null,
+  };
+
+  let { data: trx, error: trxErr } = await supabase
     .from('transactions')
-    .insert([
-      {
-        tanggal: trxDate,
-        waktu,
-        customer_id: customerId,
-        price_list_id: params.price_list_id,
-        harga: Number(params.harga),
-        metode_bayar: null,
-        keterangan: finalKeterangan || null,
-        kasir_id: params.kasir_id,
-        status: 'aktif',
-        status_pengerjaan: 'proses',
-        waktu_selesai: null,
-      },
-    ])
+    .insert([trxPayload])
     .select()
     .single();
+
+  if (trxErr && (trxErr.code === 'PGRST204' || trxErr.message?.includes('schema cache'))) {
+    // Fallback if newly added columns (waktu, price_list_id, keterangan) are not yet in Supabase schema cache
+    const fallbackPayload: any = {
+      no_transaksi,
+      no_polisi: params.nopol.toUpperCase().trim(),
+      kendaraan,
+      tipe,
+      paket_nama,
+      tanggal: trxDate,
+      customer_id: customerId,
+      harga: Number(params.harga),
+      metode_bayar: null,
+      kasir_id: params.kasir_id,
+      status: 'aktif',
+      status_pengerjaan: 'proses',
+      waktu_selesai: null,
+    };
+    const retryRes = await supabase.from('transactions').insert([fallbackPayload]).select().single();
+    if (!retryRes.error) {
+      trx = retryRes.data;
+      trxErr = null;
+    }
+  }
 
   if (trxErr) throw new Error(`Gagal menyimpan transaksi mobil masuk: ${trxErr.message}`);
   return trx as Transaction;

@@ -186,27 +186,39 @@ create table if not exists nopol_history (
 -- 3. Table: transactions
 create table if not exists transactions (
   id bigserial primary key,
+  no_transaksi text,
   tanggal date not null default current_date,
   waktu time not null default current_time,
   customer_id int references customers(id) on delete set null,
   price_list_id int references price_list(id) on delete set null,
-  harga numeric not null,          -- SNAPSHOT harga saat mobil masuk, bukan referensi live
+  harga numeric not null default 0, -- SNAPSHOT harga saat mobil masuk
+  harga_standar numeric,
+  harga_disesuaikan boolean default false,
+  no_polisi text,
+  kendaraan text,
+  tipe text,
+  paket_nama text,
+  komisi_washer numeric default 0,
+  komisi_checker numeric default 0,
   metode_bayar text,               -- NULLABLE — baru terisi pas tahap Pembayaran, bukan pas mobil masuk
+  status_piutang text,
+  tanggal_lunas timestamptz,
   keterangan text,
   kasir_id int references users(id) on delete set null,
-  status text not null default 'aktif' check (status in ('aktif','void')),
-  status_pengerjaan text not null default 'proses' check (status_pengerjaan in ('proses','selesai')),
+  status text not null default 'aktif',
+  status_pengerjaan text not null default 'proses',
   waktu_selesai timestamptz,       -- diisi otomatis pas tahap Pembayaran disubmit
+  created_by text,
   created_at timestamptz default now()
 );
 
 -- 4. Table: transaction_staff
 create table if not exists transaction_staff (
+  id serial primary key,
   transaction_id bigint references transactions(id) on delete cascade,
   staff_id int references staff(id) on delete cascade,
-  peran text not null,
-  komisi numeric not null,
-  primary key (transaction_id, staff_id, peran)
+  peran text,
+  komisi numeric not null default 0
 );
 
 -- 5. Table: transaction_void_log
@@ -221,12 +233,18 @@ create table if not exists transaction_void_log (
 -- 6. Table: daily_closing
 create table if not exists daily_closing (
   id serial primary key,
-  tanggal date not null,
+  tanggal date not null default current_date,
   kasir_id int references users(id) on delete set null,
-  total_transaksi int not null,      -- jumlah transaksi selesai hari itu, milik kasir ybs
-  total_omzet numeric not null,
+  total_transaksi int not null default 0,      -- jumlah transaksi selesai hari itu, milik kasir ybs
+  total_omzet numeric not null default 0,
+  total_tunai numeric default 0,
+  total_qris numeric default 0,
+  total_piutang numeric default 0,
+  total_promo numeric default 0,
+  jumlah_transaksi int default 0,
+  closed_by int references users(id) on delete set null,
   ditutup_pada timestamptz default now(),
-  unique (tanggal, kasir_id)         -- 1 kasir cuma bisa tutup 1x per hari
+  created_at timestamptz default now()
 );
 
 -- 7. Table: komisi_manual
@@ -235,15 +253,28 @@ create table if not exists komisi_manual (
   staff_id int references staff(id) on delete cascade,
   tanggal date not null default current_date,
   keterangan text not null,       -- bebas, misal "Cuci Karpet", "Cuci Jok", "Bonus Harian", dll
-  nominal numeric not null,       -- nominal bebas, ditentukan owner/sistem_owner tiap kasih
+  nominal numeric not null default 0, -- nominal bebas, ditentukan owner/sistem_owner tiap kasih
   dientry_oleh int references users(id) on delete set null,
   created_at timestamptz default now()
+);
+
+-- 8. Table: attendance
+create table if not exists attendance (
+  id serial primary key,
+  staff_id int references staff(id) on delete cascade,
+  tanggal date not null default current_date,
+  status text not null,          -- 'Hadir', 'Izin', 'Sakit', 'Alpha'
+  keterangan text,
+  created_at timestamptz default now(),
+  unique (staff_id, tanggal)
 );
 
 -- Indexes for performance
 create index if not exists idx_transactions_tanggal on transactions(tanggal);
 create index if not exists idx_transactions_status on transactions(status, status_pengerjaan);
 create index if not exists idx_transactions_customer on transactions(customer_id);
+create index if not exists idx_transactions_price_list on transactions(price_list_id);
 create index if not exists idx_transactions_kasir on transactions(kasir_id);
 create index if not exists idx_customers_nopol on customers(nopol);
 create index if not exists idx_daily_closing_tanggal on daily_closing(tanggal);
+create index if not exists idx_attendance_tanggal_staff on attendance(tanggal, staff_id);
