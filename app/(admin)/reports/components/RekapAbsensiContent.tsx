@@ -98,7 +98,7 @@ export function RekapAbsensiContent() {
                   const hadir = sAtt.filter(a => a.status === 'Hadir').length;
                   const sakit = sAtt.filter(a => a.status === 'Sakit').length;
                   const izin = sAtt.filter(a => a.status === 'Izin').length;
-                  const alpa = sAtt.filter(a => a.status === 'Alpa').length;
+                  const alpa = sAtt.filter(a => a.status === 'Alpha' || (a.status as any) === 'Alpa').length;
                   
                   return (
                     <tr key={s.id} className="hover:bg-slate-50 transition">

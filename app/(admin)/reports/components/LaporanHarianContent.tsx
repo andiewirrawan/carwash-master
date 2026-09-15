@@ -6,7 +6,6 @@ import { formatRupiah, formatDateID } from '@/lib/format';
 import { LaporanHarian } from '@/types/database';
 import {
   Calendar,
-  Search,
   Download,
   BarChart3,
   TrendingUp,
@@ -42,10 +41,33 @@ export function LaporanHarianContent() {
     loadData();
   }, [loadData]);
 
-  const totalOmzet = reports.reduce((acc, r) => acc + (r.omzet || 0), 0);
-  const totalTrx = reports.reduce((acc, r) => acc + (r.jumlah_transaksi || 0), 0);
-  const totalTunai = reports.reduce((acc, r) => acc + (r.metode_tunai || 0), 0);
-  const totalNonTunai = reports.reduce((acc, r) => acc + (r.metode_qris || 0) + (r.metode_transfer || 0), 0);
+  const totalOmzet = reports.reduce((acc, r) => acc + (Number(r.omzet) || 0), 0);
+  const totalTrx = reports.reduce((acc, r) => acc + (Number(r.jumlah_transaksi) || 0), 0);
+  const totalTunai = reports.reduce((acc, r) => acc + (Number(r.tunai) || 0), 0);
+  const totalNonTunai = reports.reduce((acc, r) => acc + (Number(r.qris) || 0), 0);
+
+  const handleExportCSV = () => {
+    if (reports.length === 0) return;
+    const headers = ['Tanggal', 'Jumlah Transaksi', 'Tunai', 'Non Tunai (QRIS)', 'Piutang', 'Total Omzet'];
+    const rows = reports.map((r) => [
+      r.tanggal,
+      r.jumlah_transaksi,
+      r.tunai || 0,
+      r.qris || 0,
+      r.piutang || 0,
+      r.omzet || 0,
+    ]);
+    const csvContent =
+      'data:text/csv;charset=utf-8,' +
+      [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `laporan_harian_${startDate}_sd_${endDate}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   return (
     <div className="space-y-6">
@@ -70,9 +92,12 @@ export function LaporanHarianContent() {
             />
           </div>
         </div>
-        <button className="inline-flex items-center gap-2 rounded-lg bg-[#0A2A5E] px-4 py-2 text-xs font-bold text-white hover:bg-blue-900 transition shadow-sm">
+        <button
+          onClick={handleExportCSV}
+          className="inline-flex items-center gap-2 rounded-lg bg-[#0A2A5E] px-4 py-2 text-xs font-bold text-white hover:bg-blue-900 transition shadow-sm"
+        >
           <Download className="h-4 w-4" />
-          <span>Export Excel</span>
+          <span>Export CSV</span>
         </button>
       </div>
 
@@ -137,12 +162,12 @@ export function LaporanHarianContent() {
                 </tr>
               ) : (
                 reports.map((r) => (
-                  <tr key={r.id || r.tanggal} className="hover:bg-slate-50 transition">
+                  <tr key={r.tanggal} className="hover:bg-slate-50 transition">
                     <td className="px-5 py-4 font-semibold text-slate-900">{formatDateID(r.tanggal)}</td>
                     <td className="px-5 py-4 text-center font-bold">{r.jumlah_transaksi}</td>
-                    <td className="px-5 py-4 text-right font-mono text-slate-600">{formatRupiah(r.metode_tunai)}</td>
+                    <td className="px-5 py-4 text-right font-mono text-slate-600">{formatRupiah(r.tunai)}</td>
                     <td className="px-5 py-4 text-right font-mono text-slate-600">
-                      {formatRupiah((r.metode_qris || 0) + (r.metode_transfer || 0))}
+                      {formatRupiah(r.qris)}
                     </td>
                     <td className="px-5 py-4 text-right font-mono font-bold text-[#0A2A5E]">{formatRupiah(r.omzet)}</td>
                   </tr>

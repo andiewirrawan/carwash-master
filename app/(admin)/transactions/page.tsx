@@ -7,11 +7,11 @@ import { useAuth } from '@/context/AuthContext';
 import { getTransactions, isDayClosedForCashier } from '@/lib/db';
 import { CategoryNav, CategoryItem } from '@/components/layout/CategoryNav';
 import { Car, Clock, Banknote, History, CheckCircle2, ShieldAlert } from 'lucide-react';
-import { MobilMasukForm } from './components/MobilMasukForm';
-import { SedangDikerjakanView } from './components/SedangDikerjakanView';
-import { PembayaranView } from './components/PembayaranView';
-import { RiwayatHariIniView } from './components/RiwayatHariIniView';
-import { TutupHariView } from './components/TutupHariView';
+import { MobilMasukForm } from '@/components/transactions/MobilMasukForm';
+import { SedangDikerjakanView } from '@/components/transactions/SedangDikerjakanView';
+import { PembayaranView } from '@/components/transactions/PembayaranView';
+import { RiwayatHariIniView } from '@/components/transactions/RiwayatHariIniView';
+import { TutupHariView } from '@/components/transactions/TutupHariView';
 
 export type WorkflowStep = 'mobil-masuk' | 'sedang-dikerjakan' | 'pembayaran' | 'riwayat-hari-ini' | 'tutup-hari';
 

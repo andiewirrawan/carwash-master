@@ -3,9 +3,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { getDailyClosingList } from '@/lib/db';
 import { DailyClosing } from '@/types/database';
-import { formatRupiah, formatDateID } from '@/lib/format';
+import { formatRupiah } from '@/lib/format';
 import {
-  Lock,
   Calendar,
   CheckCircle2,
 } from 'lucide-react';
@@ -55,33 +54,31 @@ export function RekapTutupHariContent() {
               <tr>
                 <th className="px-5 py-4">Waktu Closing</th>
                 <th className="px-5 py-4">Kasir / Admin</th>
-                <th className="px-5 py-4 text-right">Omzet Tunai</th>
-                <th className="px-5 py-4 text-right">Omzet Non-Tunai</th>
-                <th className="px-5 py-4 text-right">Grand Total</th>
+                <th className="px-5 py-4 text-center">Total Transaksi</th>
+                <th className="px-5 py-4 text-right">Omzet Total</th>
                 <th className="px-5 py-4 text-center">Status</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="py-10 text-center">
+                  <td colSpan={5} className="py-10 text-center">
                     <div className="inline-block h-6 w-6 animate-spin rounded-full border-2 border-[#0A2A5E] border-t-transparent" />
                   </td>
                 </tr>
               ) : closings.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-10 text-center text-slate-400">Belum ada closing pada tanggal ini.</td>
+                  <td colSpan={5} className="py-10 text-center text-slate-400">Belum ada closing pada tanggal ini.</td>
                 </tr>
               ) : (
                 closings.map((c) => (
                   <tr key={c.id} className="hover:bg-slate-50 transition">
                     <td className="px-5 py-4 font-mono text-xs text-slate-600">
-                      {c.waktu_closing?.split('T')[1]?.substring(0, 5) || '-'}
+                      {c.ditutup_pada?.split('T')[1]?.substring(0, 5) || '-'}
                     </td>
                     <td className="px-5 py-4 font-bold text-slate-900">{c.kasir_nama}</td>
-                    <td className="px-5 py-4 text-right font-mono text-slate-600">{formatRupiah(c.omzet_tunai)}</td>
-                    <td className="px-5 py-4 text-right font-mono text-slate-600">{formatRupiah(c.omzet_non_tunai)}</td>
-                    <td className="px-5 py-4 text-right font-mono font-bold text-[#0A2A5E]">{formatRupiah(c.omzet_total)}</td>
+                    <td className="px-5 py-4 text-center font-bold text-slate-700">{c.total_transaksi} Trx</td>
+                    <td className="px-5 py-4 text-right font-mono font-bold text-[#0A2A5E]">{formatRupiah(c.total_omzet)}</td>
                     <td className="px-5 py-4 text-center">
                       <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-bold text-emerald-800">
                         <CheckCircle2 className="h-3 w-3" />

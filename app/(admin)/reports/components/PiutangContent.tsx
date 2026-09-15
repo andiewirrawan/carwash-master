@@ -53,8 +53,8 @@ export function PiutangContent() {
   };
 
   const filtered = transactions.filter(t => 
-    t.no_polisi.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    t.customer_nama?.toLowerCase().includes(searchQuery.toLowerCase())
+    (t.no_polisi || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (t.customer_nama || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   return (
