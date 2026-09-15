@@ -168,6 +168,7 @@ export interface LaporanHarian {
   tunai: number;
   qris: number;
   piutang: number;
+  promo?: number;
 }
 
 export interface LaporanBulanan {
@@ -182,6 +183,9 @@ export interface KomisiPerStaff {
   role: string;
   tanggal: string;
   total_komisi: number;
+  staff_id?: number;
+  staff_nama?: string;
+  total_transaksi?: number;
 }
 
 export interface User {

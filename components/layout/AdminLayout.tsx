@@ -71,23 +71,15 @@ const MENU_ITEMS: MenuItem[] = [
   },
   {
     title: 'Absensi Staff',
+    href: '/absensi',
     icon: UserCheck,
     minRole: 'admin',
-    subItems: [
-      { title: 'Absensi Harian', href: '/absensi', icon: UserCheck, minRole: 'admin' },
-      { title: 'Rekap Bulanan', href: '/rekap-absensi', icon: CalendarDays, minRole: 'admin' },
-    ],
   },
   {
     title: 'Laporan & Keuangan',
+    href: '/reports',
     icon: TrendingUp,
     minRole: 'spv',
-    subItems: [
-      { title: 'Insentif Mingguan', href: '/insentif-mingguan', icon: Banknote, minRole: 'spv' },
-      { title: 'Komisi Washer', href: '/komisi-washer', icon: Award, minRole: 'spv' },
-      { title: 'Komisi Manual', href: '/komisi-manual', icon: Sparkles, minRole: 'admin' },
-      { title: 'Laporan Bulanan', href: '/laporan-bulanan', icon: FileSpreadsheet, minRole: 'spv' },
-    ],
   },
   {
     title: 'Master Data',
@@ -308,7 +300,10 @@ function AdminLayoutMain({ children }: { children: React.ReactNode }) {
               const isSubExpanded = Boolean(expandedMenus[menu.title]);
               const isDirectActive =
                 menu.href === pathname ||
-                (menu.href === '/customers' && pathname.startsWith('/customers'));
+                (menu.href === '/customers' && pathname.startsWith('/customers')) ||
+                (menu.href === '/reports' && (pathname.startsWith('/reports') || ['/insentif-mingguan', '/komisi-washer', '/komisi-manual', '/laporan-bulanan'].includes(pathname))) ||
+                (menu.href === '/absensi' && (pathname.startsWith('/absensi') || ['/attendance', '/rekap-absensi'].includes(pathname))) ||
+                (menu.href === '/piutang' && pathname.startsWith('/piutang'));
               const isAnySubActive =
                 hasSub && menu.subItems?.some((sub) => sub.href === pathname);
 

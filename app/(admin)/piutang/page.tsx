@@ -109,10 +109,15 @@ export default function PiutangPage() {
       {/* Header */}
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
-          <h1 id="piutang-header-title" className="text-2xl font-bold tracking-tight text-slate-900">
-            Daftar Piutang Pelanggan
-          </h1>
-          <p className="text-sm text-slate-500">
+          <div className="flex items-center gap-2">
+            <h1 id="piutang-header-title" className="text-2xl font-bold tracking-tight text-slate-900">
+              💰 Daftar Piutang
+            </h1>
+            <span className="rounded-full bg-amber-100 px-3 py-0.5 text-xs font-semibold text-amber-800">
+              Kategori: Piutang
+            </span>
+          </div>
+          <p className="mt-1 text-sm text-slate-500">
             Kelola transaksi kasir dengan metode bayar piutang dan pencatatan status pelunasan.
           </p>
         </div>
