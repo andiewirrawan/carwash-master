@@ -5,17 +5,20 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { AdminLayout } from '@/components/layout/AdminLayout';
 import { useAuth } from '@/context/AuthContext';
 import { getTransactions, isDayClosedForCashier } from '@/lib/db';
-import { WorkflowNav, WorkflowStep } from '@/components/transactions/WorkflowNav';
-import { MobilMasukForm } from '@/components/transactions/MobilMasukForm';
-import { SedangDikerjakanView } from '@/components/transactions/SedangDikerjakanView';
-import { PembayaranView } from '@/components/transactions/PembayaranView';
-import { RiwayatHariIniView } from '@/components/transactions/RiwayatHariIniView';
-import { TutupHariView } from '@/components/transactions/TutupHariView';
+import { CategoryNav, CategoryItem } from '@/components/layout/CategoryNav';
+import { Car, Clock, Banknote, History, CheckCircle2, ShieldAlert } from 'lucide-react';
+import { MobilMasukForm } from './components/MobilMasukForm';
+import { SedangDikerjakanView } from './components/SedangDikerjakanView';
+import { PembayaranView } from './components/PembayaranView';
+import { RiwayatHariIniView } from './components/RiwayatHariIniView';
+import { TutupHariView } from './components/TutupHariView';
+
+export type WorkflowStep = 'mobil-masuk' | 'sedang-dikerjakan' | 'pembayaran' | 'riwayat-hari-ini' | 'tutup-hari';
 
 function TransactionsWorkflowContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, hasAccess } = useAuth();
 
   const initialStep = (searchParams.get('step') as WorkflowStep) || 'mobil-masuk';
   const initialTrxId = searchParams.get('trx') ? Number(searchParams.get('trx')) : undefined;
@@ -56,53 +59,69 @@ function TransactionsWorkflowContent() {
     setActiveStep(step);
     setHighlightTrxId(targetTrxId);
     refreshBadges();
+    
+    // Update URL without refresh
+    const url = new URL(window.location.href);
+    url.searchParams.set('step', step);
+    if (targetTrxId) url.searchParams.set('trx', String(targetTrxId));
+    else url.searchParams.delete('trx');
+    window.history.pushState({}, '', url.toString());
   };
 
+  const categories: CategoryItem[] = [
+    { id: 'mobil-masuk', label: 'Mobil Masuk', icon: Car, onClick: () => handleStepChange('mobil-masuk') },
+    { id: 'sedang-dikerjakan', label: 'Sedang Dikerjakan', icon: Clock, onClick: () => handleStepChange('sedang-dikerjakan'), badge: countProses > 0 ? countProses : undefined, badgeColor: 'bg-amber-100 text-amber-700' },
+    { id: 'pembayaran', label: 'Pembayaran', icon: Banknote, onClick: () => handleStepChange('pembayaran'), badge: countPembayaran > 0 ? countPembayaran : undefined, badgeColor: 'bg-blue-100 text-blue-700' },
+    { id: 'riwayat-hari-ini', label: 'Riwayat Hari Ini', icon: History, onClick: () => handleStepChange('riwayat-hari-ini') },
+    { id: 'tutup-hari', label: 'Tutup Hari', icon: CheckCircle2, onClick: () => handleStepChange('tutup-hari'), badge: isClosedToday ? 'Selesai' : 'Buka', badgeColor: isClosedToday ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500' },
+  ];
+
+  if (hasAccess('owner')) {
+    categories.push({ id: 'void-transaksi', label: 'Void Transaksi', icon: ShieldAlert, onClick: () => handleStepChange('riwayat-hari-ini') }); // Void is integrated in Riwayat but filterable or special view
+  }
+
   return (
-    <div className="space-y-6">
-      {/* Workflow Navigation Bar */}
-      <WorkflowNav
-        activeStep={activeStep}
-        onChangeStep={(step) => handleStepChange(step)}
-        countProses={countProses}
-        countPembayaran={countPembayaran}
-        isClosedToday={isClosedToday}
-      />
+    <div className="flex flex-col sm:flex-row gap-8">
+      {/* Lapis 2: Vertical Category Navigation */}
+      <CategoryNav title="Transaksi Kasir" items={categories} activeId={activeStep} />
 
-      {/* Step 1: Mobil Masuk */}
-      {activeStep === 'mobil-masuk' && (
-        <MobilMasukForm
-          onSuccessNavigate={(nextStep, createdTrxId) => {
-            handleStepChange(nextStep, createdTrxId);
-          }}
-        />
-      )}
+      {/* Content Area */}
+      <div className="flex-1 min-w-0">
+        {/* Step 1: Mobil Masuk */}
+        {activeStep === 'mobil-masuk' && (
+          <MobilMasukForm
+            onSuccessNavigate={(nextStep, createdTrxId) => {
+              handleStepChange(nextStep, createdTrxId);
+            }}
+          />
+        )}
 
-      {/* Step 2: Sedang Dikerjakan */}
-      {activeStep === 'sedang-dikerjakan' && (
-        <SedangDikerjakanView
-          highlightTrxId={highlightTrxId}
-          onNavigateStep={(nextStep, targetTrxId) => {
-            handleStepChange(nextStep, targetTrxId);
-          }}
-        />
-      )}
+        {/* Step 2: Sedang Dikerjakan */}
+        {activeStep === 'sedang-dikerjakan' && (
+          <SedangDikerjakanView
+            highlightTrxId={highlightTrxId}
+            onNavigateStep={(nextStep, targetTrxId) => {
+              handleStepChange(nextStep, targetTrxId);
+            }}
+          />
+        )}
 
-      {/* Step 3: Pembayaran */}
-      {activeStep === 'pembayaran' && (
-        <PembayaranView
-          preSelectedTrxId={highlightTrxId}
-          onNavigateStep={(nextStep) => {
-            handleStepChange(nextStep);
-          }}
-        />
-      )}
+        {/* Step 3: Pembayaran */}
+        {activeStep === 'pembayaran' && (
+          <PembayaranView
+            preSelectedTrxId={highlightTrxId}
+            onNavigateStep={(nextStep) => {
+              handleStepChange(nextStep);
+            }}
+          />
+        )}
 
-      {/* Step 4: Riwayat Hari Ini */}
-      {activeStep === 'riwayat-hari-ini' && <RiwayatHariIniView />}
+        {/* Step 4: Riwayat Hari Ini */}
+        {activeStep === 'riwayat-hari-ini' && <RiwayatHariIniView />}
 
-      {/* Step 5: Tutup Hari */}
-      {activeStep === 'tutup-hari' && <TutupHariView />}
+        {/* Step 5: Tutup Hari */}
+        {activeStep === 'tutup-hari' && <TutupHariView />}
+      </div>
     </div>
   );
 }

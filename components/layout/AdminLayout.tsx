@@ -46,10 +46,10 @@ interface MenuItem {
 
 const MENU_ITEMS: MenuItem[] = [
   {
-    title: 'Dashboard Owner',
+    title: 'Dashboard',
     href: '/dashboard',
     icon: LayoutDashboard,
-    minRole: 'spv',
+    minRole: 'admin',
   },
   {
     title: 'Transaksi Kasir',
@@ -61,12 +61,6 @@ const MENU_ITEMS: MenuItem[] = [
     title: 'Data Customer',
     href: '/customers',
     icon: Contact,
-    minRole: 'admin',
-  },
-  {
-    title: 'Daftar Piutang',
-    href: '/piutang',
-    icon: CreditCard,
     minRole: 'admin',
   },
   {
@@ -83,30 +77,8 @@ const MENU_ITEMS: MenuItem[] = [
   },
   {
     title: 'Master Data',
+    href: '/master-data',
     icon: Database,
-    minRole: 'spv',
-    subItems: [
-      { title: 'Daftar Harga', href: '/price-list', icon: Tag, minRole: 'spv' },
-      { title: 'Kategori Kendaraan', href: '/vehicles', icon: Car, minRole: 'spv' },
-      { title: 'Data Staff', href: '/staff', icon: Users, minRole: 'spv' },
-    ],
-  },
-  {
-    title: 'Riwayat Multiplier',
-    href: '/staff-multipliers',
-    icon: Percent,
-    minRole: 'spv',
-  },
-  {
-    title: 'Kelola User',
-    href: '/users',
-    icon: ShieldCheck,
-    minRole: 'sistem_owner',
-  },
-  {
-    title: 'Backup & Storage',
-    href: '/backup',
-    icon: HardDrive,
     minRole: 'spv',
   },
 ];
@@ -134,11 +106,6 @@ function AdminLayoutMain({ children }: { children: React.ReactNode }) {
 
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [expandedMenus, setExpandedMenus] = useState<Record<string, boolean>>({
-    'Absensi Staff': true,
-    'Laporan & Keuangan': true,
-    'Master Data': false,
-  });
   const [showNotifications, setShowNotifications] = useState<boolean>(false);
 
   useEffect(() => {
@@ -149,14 +116,7 @@ function AdminLayoutMain({ children }: { children: React.ReactNode }) {
 
   // Auto expand menu if current route is within it
   useEffect(() => {
-    MENU_ITEMS.forEach((menu) => {
-      if (menu.subItems?.some((sub) => sub.href === pathname)) {
-        setExpandedMenus((prev) => ({
-          ...prev,
-          [menu.title]: true,
-        }));
-      }
-    });
+    // No-op: Sidebar is flat now
   }, [pathname]);
 
   if (isLoading) {
@@ -173,10 +133,7 @@ function AdminLayoutMain({ children }: { children: React.ReactNode }) {
   if (!user) return null;
 
   const toggleSubmenu = (title: string) => {
-    setExpandedMenus((prev) => ({
-      ...prev,
-      [title]: !prev[title],
-    }));
+    // No-op: Sidebar is flat now
   };
 
   // Filter menu based on search box & roles
