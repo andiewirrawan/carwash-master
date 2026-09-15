@@ -1391,6 +1391,62 @@ export async function getLaporanBulanan(year?: number): Promise<LaporanBulanan[]
 }
 
 export async function getKomisiPerStaff(filters?: { startDate?: string; endDate?: string; staffId?: number; role?: string; }): Promise<KomisiPerStaff[]> {
+  // 1. Coba lewat API backend /api/reports/komisi-staff
+  try {
+    const params = new URLSearchParams();
+    if (filters?.startDate) params.set('startDate', filters.startDate);
+    if (filters?.endDate) params.set('endDate', filters.endDate);
+    if (filters?.staffId) params.set('staffId', String(filters.staffId));
+    if (filters?.role) params.set('role', filters.role);
+
+    const res = await fetch(`/api/reports/komisi-staff?${params.toString()}`);
+    if (res.ok) {
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data)) {
+        return json.data as KomisiPerStaff[];
+      }
+    }
+  } catch {
+    // fallback
+  }
+
+  // 2. Fallback direct computation from transactions + transaction_staff
+  try {
+    const { data: staffList } = await supabase.from('staff').select('id, nama, role').eq('aktif', true);
+    let trxQuery = supabase.from('transactions').select('id, tanggal, status, transaction_staff(id, staff_id, peran, komisi)').eq('status', 'aktif');
+    if (filters?.startDate) trxQuery = trxQuery.gte('tanggal', filters.startDate);
+    if (filters?.endDate) trxQuery = trxQuery.lte('tanggal', filters.endDate);
+
+    const { data: trxs } = await trxQuery;
+
+    if (staffList && trxs) {
+      return staffList.map((s) => {
+        let totalUnit = 0;
+        let totalKomisi = 0;
+        trxs.forEach((t: any) => {
+          const assignments = t.transaction_staff || [];
+          const match = assignments.find((a: any) => a.staff_id === s.id);
+          if (match) {
+            totalUnit += 1;
+            totalKomisi += Number(match.komisi || 0);
+          }
+        });
+        return {
+          id: s.id,
+          staff_id: s.id,
+          nama: s.nama,
+          staff_nama: s.nama,
+          role: s.role,
+          tanggal: filters?.startDate || filters?.endDate || new Date().toISOString().split('T')[0],
+          total_transaksi: totalUnit,
+          total_komisi: totalKomisi,
+        };
+      });
+    }
+  } catch {
+    // fallback to view
+  }
+
   let query = supabase.from('komisi_per_staff').select('*');
   if (filters?.startDate) query = query.gte('tanggal', filters.startDate);
   if (filters?.endDate) query = query.lte('tanggal', filters.endDate);
