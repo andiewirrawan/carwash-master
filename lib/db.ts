@@ -58,6 +58,22 @@ export async function deleteVehicleCategory(id: number): Promise<boolean> {
 // PRICE LIST & PRICE LIST KOMISI
 // -------------------------------------------------------------
 export async function getPriceListKomisi(priceListId?: number): Promise<PriceListKomisi[]> {
+  try {
+    const res = await fetch('/api/price-list');
+    if (res.ok) {
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data)) {
+        const allK = json.data.flatMap((p: PriceList) => p.komisi_list || []);
+        if (priceListId) {
+          return allK.filter((k: PriceListKomisi) => k.price_list_id === priceListId);
+        }
+        return allK;
+      }
+    }
+  } catch {
+    // fallback to supabase client
+  }
+
   let query = supabase.from('price_list_komisi').select('*').order('id', { ascending: true });
   if (priceListId) {
     query = query.eq('price_list_id', priceListId);
@@ -73,7 +89,10 @@ export async function getPriceListKomisi(priceListId?: number): Promise<PriceLis
   })) as PriceListKomisi[];
 }
 
-export async function savePriceListKomisi(priceListId: number, roles: { peran: string; komisi: number }[]): Promise<PriceListKomisi[]> {
+export async function savePriceListKomisi(
+  priceListId: number,
+  roles: { peran: string; komisi: number }[]
+): Promise<PriceListKomisi[]> {
   await supabase.from('price_list_komisi').delete().eq('price_list_id', priceListId);
   if (roles.length > 0) {
     const payload = roles.map((r) => ({
@@ -89,6 +108,19 @@ export async function savePriceListKomisi(priceListId: number, roles: { peran: s
 }
 
 export async function getPriceList(): Promise<PriceList[]> {
+  // 1. Try server-side API (bypasses RLS issues and handles joins cleanly)
+  try {
+    const res = await fetch('/api/price-list');
+    if (res.ok) {
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data)) {
+        return json.data as PriceList[];
+      }
+    }
+  } catch {
+    // fallback to client Supabase
+  }
+
   const { data, error } = await supabase.from('price_list').select('*').order('id', { ascending: true });
   if (error) {
     console.error('getPriceList error:', error);
@@ -114,46 +146,122 @@ export async function getPriceList(): Promise<PriceList[]> {
   });
 }
 
-export async function addPriceList(item: Omit<PriceList, 'id'>, komisiList?: { peran: string; komisi: number }[]): Promise<PriceList> {
-  const payload = {
-    kendaraan: item.kendaraan,
-    paket: item.paket || item.paket_nama || '',
-    fasilitas: item.fasilitas,
-    tipe: item.tipe,
-    harga: Number(item.harga) || 0,
-  };
-  const { data, error } = await supabase.from('price_list').insert([payload]).select().single();
-  if (error) throw error;
-  const createdItem = { ...data, harga: Number(data.harga) || 0, paket_nama: data.paket } as PriceList;
-  if (komisiList && komisiList.length > 0) {
-    createdItem.komisi_list = await savePriceListKomisi(createdItem.id, komisiList);
+export async function addPriceList(
+  item: Omit<PriceList, 'id'>,
+  komisiList?: { peran: string; komisi: number }[],
+  requestingUserId?: number | null
+): Promise<PriceList> {
+  // 1. Try server-side API
+  try {
+    const res = await fetch('/api/price-list', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...item,
+        komisi_list: komisiList,
+        requesting_user_id: requestingUserId,
+      }),
+    });
+    const json = await res.json();
+    if (!res.ok || !json.success) {
+      throw new Error(json.error || 'Gagal menambahkan paket price list.');
+    }
+    return json.data as PriceList;
+  } catch (apiErr: any) {
+    if (apiErr.message && !apiErr.message.includes('fetch')) {
+      throw apiErr;
+    }
+
+    // 2. Fallback to direct Supabase
+    const payload = {
+      kendaraan: item.kendaraan,
+      paket: item.paket || item.paket_nama || '',
+      fasilitas: item.fasilitas,
+      tipe: item.tipe,
+      harga: Number(item.harga) || 0,
+    };
+    const { data, error } = await supabase.from('price_list').insert([payload]).select().single();
+    if (error) throw error;
+    const createdItem = { ...data, harga: Number(data.harga) || 0, paket_nama: data.paket } as PriceList;
+    if (komisiList && komisiList.length > 0) {
+      createdItem.komisi_list = await savePriceListKomisi(createdItem.id, komisiList);
+    }
+    return createdItem;
   }
-  return createdItem;
 }
 
-export async function updatePriceList(id: number, item: Partial<PriceList>, komisiList?: { peran: string; komisi: number }[]): Promise<PriceList | null> {
-  const payload: Record<string, any> = {};
-  if (item.kendaraan !== undefined) payload.kendaraan = item.kendaraan;
-  if (item.paket !== undefined) payload.paket = item.paket;
-  if (item.fasilitas !== undefined) payload.fasilitas = item.fasilitas;
-  if (item.tipe !== undefined) payload.tipe = item.tipe;
-  if (item.harga !== undefined) payload.harga = Number(item.harga) || 0;
+export async function updatePriceList(
+  id: number,
+  item: Partial<PriceList>,
+  komisiList?: { peran: string; komisi: number }[],
+  requestingUserId?: number | null
+): Promise<PriceList | null> {
+  // 1. Try server-side API
+  try {
+    const res = await fetch('/api/price-list', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id,
+        ...item,
+        komisi_list: komisiList,
+        requesting_user_id: requestingUserId,
+      }),
+    });
+    const json = await res.json();
+    if (!res.ok || !json.success) {
+      throw new Error(json.error || 'Gagal mengubah paket price list.');
+    }
+    return json.data as PriceList;
+  } catch (apiErr: any) {
+    if (apiErr.message && !apiErr.message.includes('fetch')) {
+      throw apiErr;
+    }
 
-  const { data, error } = await supabase.from('price_list').update(payload).eq('id', id).select().single();
-  if (error) throw error;
-  let updatedItem = { ...data, harga: Number(data.harga) || 0, paket_nama: data.paket } as PriceList;
-  if (komisiList !== undefined) {
-    updatedItem.komisi_list = await savePriceListKomisi(id, komisiList);
+    // 2. Fallback to direct client
+    const payload: Record<string, any> = {};
+    if (item.kendaraan !== undefined) payload.kendaraan = item.kendaraan;
+    if (item.paket !== undefined) payload.paket = item.paket;
+    if (item.fasilitas !== undefined) payload.fasilitas = item.fasilitas;
+    if (item.tipe !== undefined) payload.tipe = item.tipe;
+    if (item.harga !== undefined) payload.harga = Number(item.harga) || 0;
+
+    const { data, error } = await supabase.from('price_list').update(payload).eq('id', id).select().single();
+    if (error) throw error;
+    let updatedItem = { ...data, harga: Number(data.harga) || 0, paket_nama: data.paket } as PriceList;
+    if (komisiList !== undefined) {
+      updatedItem.komisi_list = await savePriceListKomisi(id, komisiList);
+    }
+    return updatedItem;
   }
-  return updatedItem;
 }
 
-export async function deletePriceList(id: number): Promise<boolean> {
-  // Assuming ON DELETE CASCADE in db for price_list_komisi, but explicit delete just in case
-  await supabase.from('price_list_komisi').delete().eq('price_list_id', id);
-  const { error } = await supabase.from('price_list').delete().eq('id', id);
-  if (error) throw error;
-  return true;
+export async function deletePriceList(
+  id: number,
+  requestingUserId?: number | null
+): Promise<boolean> {
+  // 1. Try server-side API
+  try {
+    const query = requestingUserId ? `?id=${id}&requesting_user_id=${requestingUserId}` : `?id=${id}`;
+    const res = await fetch(`/api/price-list${query}`, {
+      method: 'DELETE',
+    });
+    const json = await res.json();
+    if (!res.ok || !json.success) {
+      throw new Error(json.error || 'Gagal menghapus paket price list.');
+    }
+    return true;
+  } catch (apiErr: any) {
+    if (apiErr.message && !apiErr.message.includes('fetch')) {
+      throw apiErr;
+    }
+
+    // 2. Fallback to direct client
+    await supabase.from('price_list_komisi').delete().eq('price_list_id', id);
+    const { error } = await supabase.from('price_list').delete().eq('id', id);
+    if (error) throw error;
+    return true;
+  }
 }
 
 // -------------------------------------------------------------

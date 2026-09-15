@@ -190,7 +190,8 @@ export function PriceListContent() {
             tipe: tipe.trim(),
             harga: hargaNum,
           },
-          cleanKomisi
+          cleanKomisi,
+          user?.id
         );
       } else {
         await addPriceList(
@@ -201,7 +202,8 @@ export function PriceListContent() {
             tipe: tipe.trim(),
             harga: hargaNum,
           },
-          cleanKomisi
+          cleanKomisi,
+          user?.id
         );
       }
       await loadData();
@@ -217,7 +219,7 @@ export function PriceListContent() {
     if (!deleteId) return;
     setSaving(true);
     try {
-      await deletePriceList(deleteId);
+      await deletePriceList(deleteId, user?.id);
       await loadData();
       setDeleteId(null);
     } catch (err: any) {
