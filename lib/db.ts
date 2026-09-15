@@ -422,9 +422,31 @@ export async function getTransactions(filters?: {
   startDate?: string;
   endDate?: string;
   kasirId?: number;
+  id?: number;
 }): Promise<Transaction[]> {
   if (!isSupabaseConfigured) return [];
   
+  // 1. Coba lewat API backend untuk konsistensi join dan bypass RLS
+  try {
+    const params = new URLSearchParams();
+    if (filters?.id) params.set('id', String(filters.id));
+    if (filters?.status && filters.status !== 'all') params.set('status', filters.status);
+    if (filters?.status_pengerjaan && filters.status_pengerjaan !== 'all') params.set('status_pengerjaan', filters.status_pengerjaan);
+    if (filters?.startDate) params.set('startDate', filters.startDate);
+    if (filters?.endDate) params.set('endDate', filters.endDate);
+    if (filters?.kasirId) params.set('kasirId', String(filters.kasirId));
+
+    const res = await fetch(`/api/transactions?${params.toString()}`);
+    if (res.ok) {
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data)) {
+        return json.data as Transaction[];
+      }
+    }
+  } catch {
+    // fallback to Supabase client
+  }
+
   let query = supabase
     .from('transactions')
     .select(`
@@ -673,14 +695,21 @@ export async function calculateStaffCommissionsForTransaction(
 ): Promise<Array<{ staff_id: number; peran: string; komisi: number; multiplier?: number; staff_nama?: string }>> {
   if (!isSupabaseConfigured) return [];
 
-  const { data: komisiRows, error } = await supabase
-    .from('price_list_komisi')
-    .select('*')
-    .eq('price_list_id', priceListId);
+  // 1. Ambil dari price_list_komisi via helper getPriceListKomisi
+  let komisiRows = await getPriceListKomisi(priceListId);
 
-  if (error || !komisiRows) {
-    console.error('calculateStaffCommissions error:', error);
-    return [];
+  // 2. Fallback ke kolom komisi_washer / komisi_checker di price_list jika price_list_komisi belum ada
+  if (!komisiRows || komisiRows.length === 0) {
+    const { data: pl } = await supabase.from('price_list').select('komisi_washer, komisi_checker').eq('id', priceListId).maybeSingle();
+    if (pl) {
+      komisiRows = [];
+      if (pl.komisi_washer && Number(pl.komisi_washer) > 0) {
+        komisiRows.push({ id: 0, price_list_id: priceListId, peran: 'washer', komisi: Number(pl.komisi_washer) });
+      }
+      if (pl.komisi_checker && Number(pl.komisi_checker) > 0) {
+        komisiRows.push({ id: 0, price_list_id: priceListId, peran: 'checker', komisi: Number(pl.komisi_checker) });
+      }
+    }
   }
 
   const assignments: Array<{ staff_id: number; peran: string; komisi: number; multiplier?: number; staff_nama?: string }> = [];
@@ -701,6 +730,15 @@ export async function calculateStaffCommissionsForTransaction(
         multiplier: mult,
       });
     }
+  } else if (washerIds.length > 0) {
+    for (const wid of washerIds) {
+      assignments.push({
+        staff_id: wid,
+        peran: 'washer',
+        komisi: 0,
+        multiplier: 0,
+      });
+    }
   }
 
   // 2. Checker Pool (Tanpa multiplier)
@@ -717,6 +755,15 @@ export async function calculateStaffCommissionsForTransaction(
         multiplier: 0,
       });
     }
+  } else if (checkerIds.length > 0) {
+    for (const cid of checkerIds) {
+      assignments.push({
+        staff_id: cid,
+        peran: 'checker',
+        komisi: 0,
+        multiplier: 0,
+      });
+    }
   }
 
   return assignments;
@@ -727,9 +774,25 @@ export async function assignTransactionStaff(
   transactionId: number,
   assignments: Array<{ staff_id: number; peran: string; komisi: number }>
 ): Promise<void> {
+  // 1. Coba lewat API backend (service_role) untuk melewati batasan RLS
+  try {
+    const res = await fetch('/api/transaction-staff', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        transaction_id: transactionId,
+        assignments,
+      }),
+    });
+    const json = await res.json();
+    if (res.ok && json.success) {
+      return;
+    }
+  } catch {
+    // fallback to supabase client
+  }
 
-
-  // Hapus penugasan lama untuk transaksi ini
+  // 2. Fallback Supabase client
   const { error: delErr } = await supabase
     .from('transaction_staff')
     .delete()
@@ -760,7 +823,20 @@ export async function completeTransactionPayment(params: {
   metode_bayar: 'Tunai' | 'Non Tunai' | string;
   keterangan?: string;
 }): Promise<Transaction> {
-
+  // 1. Coba lewat API backend
+  try {
+    const res = await fetch('/api/transactions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    });
+    const json = await res.json();
+    if (res.ok && json.success && json.data) {
+      return json.data as Transaction;
+    }
+  } catch {
+    // fallback
+  }
 
   const waktu_selesai = new Date().toISOString();
 

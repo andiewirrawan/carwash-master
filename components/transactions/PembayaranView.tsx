@@ -377,18 +377,69 @@ export function PembayaranView({ onNavigateStep, preSelectedTrxId }: PembayaranV
                 </p>
               </div>
 
-              {/* Washer warning if none */}
-              {!(selectedTrx.staff_assigned || []).some((s) => s.peran === 'washer') && (
-                <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                  <div>
-                    <p className="font-bold">Belum Ada Washer Terdaftar</p>
-                    <p className="text-amber-700 mt-0.5">
-                      Sebaiknya tugaskan washer di menu &quot;Sedang Dikerjakan&quot; terlebih dahulu agar pembagian komisi terhitung.
-                    </p>
-                  </div>
+              {/* Assigned Staff (Washer & Checker) Section in Modal */}
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold text-slate-800 uppercase">
+                    Petugas Bertugas:
+                  </span>
+                  <span className="text-[11px] text-slate-600">
+                    {(selectedTrx.staff_assigned || []).length} Staff Ditugaskan
+                  </span>
                 </div>
-              )}
+
+                {(selectedTrx.staff_assigned || []).length > 0 ? (
+                  <div className="space-y-2">
+                    {/* Washers */}
+                    {(selectedTrx.staff_assigned || []).filter((s) => s.peran === 'washer').length > 0 && (
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[11px] font-semibold text-emerald-800 bg-emerald-100/80 px-2 py-0.5 rounded">
+                          Washer:
+                        </span>
+                        {(selectedTrx.staff_assigned || [])
+                          .filter((s) => s.peran === 'washer')
+                          .map((s, idx) => (
+                            <span
+                              key={idx}
+                              className="text-xs font-bold px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-900 border border-emerald-300 shadow-2xs inline-flex items-center gap-1"
+                            >
+                              🚿 {s.staff_nama || `Staff #${s.staff_id}`}
+                            </span>
+                          ))}
+                      </div>
+                    )}
+
+                    {/* Checkers */}
+                    {(selectedTrx.staff_assigned || []).filter((s) => s.peran === 'checker').length > 0 && (
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[11px] font-semibold text-blue-800 bg-blue-100/80 px-2 py-0.5 rounded">
+                          Checker:
+                        </span>
+                        {(selectedTrx.staff_assigned || [])
+                          .filter((s) => s.peran === 'checker')
+                          .map((s, idx) => (
+                            <span
+                              key={idx}
+                              className="text-xs font-bold px-2.5 py-1 rounded-lg bg-blue-50 text-blue-900 border border-blue-300 shadow-2xs inline-flex items-center gap-1"
+                            >
+                              🔍 {s.staff_nama || `Staff #${s.staff_id}`}
+                            </span>
+                          ))}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-bold">Belum Ada Washer Terdaftar</p>
+                      <p className="text-amber-700 mt-0.5">
+                        Sebaiknya tugaskan washer di menu &quot;Sedang Dikerjakan&quot; terlebih dahulu agar pembagian komisi terhitung.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
 
               {/* PAYMENT METHOD SELECTOR: HANYA 2 PILIHAN (TUNAI & NON TUNAI) */}
               <div>
