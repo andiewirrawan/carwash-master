@@ -812,6 +812,20 @@ export async function voidTransaction(id: number, alasan: string, userId: number
   }
 }
 
+// Hapus Transaksi (Khusus transaksi antrean / proses yang dibatalkan / salah input)
+export async function deleteTransaction(id: number): Promise<void> {
+  if (!isSupabaseConfigured) return;
+
+  // Hapus relasi staff dan logs
+  await supabase.from('transaction_staff').delete().eq('transaction_id', id);
+  await supabase.from('transaction_void_log').delete().eq('transaction_id', id);
+
+  const { error } = await supabase.from('transactions').delete().eq('id', id);
+  if (error) {
+    throw new Error(`Gagal menghapus transaksi: ${error.message}`);
+  }
+}
+
 // -------------------------------------------------------------
 // -------------------------------------------------------------
 // CUSTOMERS & NOPOL HISTORY (TAHAP 4)

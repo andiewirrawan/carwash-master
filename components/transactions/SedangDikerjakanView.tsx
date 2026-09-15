@@ -6,24 +6,29 @@ import {
   getStaffList,
   assignTransactionStaff,
   calculateStaffCommissionsForTransaction,
-  getStaffMultipliers,
+  getPriceList,
+  updateTransaction,
+  deleteTransaction,
 } from '@/lib/db';
-import { Transaction, Staff, StaffMultiplier } from '@/types/database';
+import { Transaction, Staff, PriceList, TransactionStaff } from '@/types/database';
 import { formatNominal } from '@/lib/format';
+import { useAuth } from '@/context/AuthContext';
 import {
-  Clock,
   Car,
-  Users,
   Search,
-  CheckCircle2,
-  AlertCircle,
-  Sparkles,
-  ArrowRight,
-  DollarSign,
-  Percent,
-  X,
   RefreshCw,
+  Edit2,
+  Trash2,
+  X,
+  Check,
+  ArrowRight,
+  AlertTriangle,
+  Users,
+  CheckCircle2,
   Phone,
+  Clock,
+  Sparkles,
+  Loader2,
 } from 'lucide-react';
 
 interface SedangDikerjakanViewProps {
@@ -32,37 +37,43 @@ interface SedangDikerjakanViewProps {
 }
 
 export function SedangDikerjakanView({ onNavigateStep, highlightTrxId }: SedangDikerjakanViewProps) {
+  const { user } = useAuth();
   const [loading, setLoading] = useState<boolean>(true);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [staffList, setStaffList] = useState<Staff[]>([]);
-  const [multipliers, setMultipliers] = useState<StaffMultiplier[]>([]);
+  const [priceList, setPriceList] = useState<PriceList[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [syncingTrxIds, setSyncingTrxIds] = useState<Record<number, boolean>>({});
 
-  // Assignment Modal
-  const [activeModalTrx, setActiveModalTrx] = useState<Transaction | null>(null);
-  const [selectedWashers, setSelectedWashers] = useState<number[]>([]);
-  const [selectedCheckers, setSelectedCheckers] = useState<number[]>([]);
-  const [isSavingAssignment, setIsSavingAssignment] = useState<boolean>(false);
-  const [calcPreview, setCalcPreview] = useState<
-    Array<{ staff_id: number; peran: string; komisi: number; multiplier?: number }>
-  >([]);
-  const [calcLoading, setCalcLoading] = useState<boolean>(false);
+  // Edit Modal State
+  const [editingTrx, setEditingTrx] = useState<Transaction | null>(null);
+  const [editNopol, setEditNopol] = useState<string>('');
+  const [editCustomerNama, setEditCustomerNama] = useState<string>('');
+  const [editCustomerHp, setEditCustomerHp] = useState<string>('');
+  const [editPriceId, setEditPriceId] = useState<number>(0);
+  const [editHarga, setEditHarga] = useState<number>(0);
+  const [editKeterangan, setEditKeterangan] = useState<string>('');
+  const [isSavingEdit, setIsSavingEdit] = useState<boolean>(false);
 
-  // Load in-progress transactions and staff
+  // Delete Confirmation Modal State
+  const [deleteTargetTrx, setDeleteTargetTrx] = useState<Transaction | null>(null);
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
+
+  // Load all in-progress transactions, staff, and price list
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [allTrx, allStaff, allMults] = await Promise.all([
+      const [allTrx, allStaff, allPrices] = await Promise.all([
         getTransactions({ status: 'aktif', status_pengerjaan: 'proses' }),
         getStaffList(),
-        getStaffMultipliers(),
+        getPriceList(),
       ]);
 
       setTransactions(allTrx);
       setStaffList(allStaff.filter((s) => s.aktif));
-      setMultipliers(allMults);
+      setPriceList(allPrices);
     } catch (err) {
-      console.error('Failed loading sedang dikerjakan data:', err);
+      console.error('Gagal memuat data pengerjaan mobil:', err);
     } finally {
       setLoading(false);
     }
@@ -72,541 +83,755 @@ export function SedangDikerjakanView({ onNavigateStep, highlightTrxId }: SedangD
     loadData();
   }, [loadData]);
 
-  // Open modal & prepopulate currently assigned staff
-  const openAssignmentModal = useCallback((trx: Transaction) => {
-    setActiveModalTrx(trx);
+  // Filter staff by active roles
+  const activeWashers = useMemo(() => {
+    return staffList.filter((s) => s.role?.toLowerCase() === 'washer');
+  }, [staffList]);
 
-    const currentWashers = (trx.staff_assigned || [])
+  const activeCheckers = useMemo(() => {
+    return staffList.filter((s) => s.role?.toLowerCase() === 'checker');
+  }, [staffList]);
+
+  // 1-Click Toggle Washer Assignment
+  const handleToggleWasher = async (trx: Transaction, staffId: number) => {
+    const currentAssignments = trx.staff_assigned || [];
+    const currentWasherIds = currentAssignments
       .filter((s) => s.peran === 'washer')
       .map((s) => s.staff_id);
-
-    const currentCheckers = (trx.staff_assigned || [])
+    const currentCheckerIds = currentAssignments
       .filter((s) => s.peran === 'checker')
       .map((s) => s.staff_id);
 
-    setSelectedWashers(currentWashers);
-    setSelectedCheckers(currentCheckers);
-  }, []);
+    const isCurrentlySelected = currentWasherIds.includes(staffId);
+    const newWasherIds = isCurrentlySelected
+      ? currentWasherIds.filter((id) => id !== staffId)
+      : [...currentWasherIds, staffId];
 
-  const closeModal = () => {
-    setActiveModalTrx(null);
-    setSelectedWashers([]);
-    setSelectedCheckers([]);
-    setCalcPreview([]);
-  };
+    // Optimistic UI update
+    const staffObj = staffList.find((s) => s.id === staffId);
+    const updatedStaffAssigned: TransactionStaff[] = [
+      ...currentAssignments.filter((s) => s.peran !== 'washer'),
+      ...newWasherIds.map((id) => {
+        const existing = currentAssignments.find((s) => s.staff_id === id && s.peran === 'washer');
+        const st = staffList.find((s) => s.id === id);
+        return {
+          transaction_id: trx.id,
+          staff_id: id,
+          peran: 'washer',
+          komisi: existing ? existing.komisi : 0,
+          staff_nama: existing?.staff_nama || st?.nama || `Washer #${id}`,
+          role: 'washer',
+        };
+      }),
+    ];
 
-  // If highlightTrxId passed, automatically open assignment modal for it
-  useEffect(() => {
-    if (highlightTrxId && transactions.length > 0 && !activeModalTrx) {
-      const target = transactions.find((t) => t.id === highlightTrxId);
-      if (target) {
-        openAssignmentModal(target);
-      }
-    }
-  }, [highlightTrxId, transactions, activeModalTrx, openAssignmentModal]);
-
-  // Filter staff by role
-  const washerStaff = useMemo(() => staffList.filter((s) => s.role === 'washer'), [staffList]);
-  const checkerStaff = useMemo(() => staffList.filter((s) => s.role === 'checker'), [staffList]);
-
-  // Recalculate commissions when washer/checker selection changes
-  useEffect(() => {
-    async function updateCalculations() {
-      if (!activeModalTrx || !activeModalTrx.price_list_id) {
-        setCalcPreview([]);
-        return;
-      }
-
-      setCalcLoading(true);
-      try {
-        const preview = await calculateStaffCommissionsForTransaction(
-          activeModalTrx.price_list_id,
-          activeModalTrx.tanggal,
-          selectedWashers,
-          selectedCheckers
-        );
-        setCalcPreview(preview);
-      } catch (err) {
-        console.error('Commission preview error:', err);
-      } finally {
-        setCalcLoading(false);
-      }
-    }
-
-    if (activeModalTrx) {
-      updateCalculations();
-    }
-  }, [activeModalTrx, selectedWashers, selectedCheckers]);
-
-  // Toggle Washer selection
-  const toggleWasher = (staffId: number) => {
-    setSelectedWashers((prev) =>
-      prev.includes(staffId) ? prev.filter((id) => id !== staffId) : [...prev, staffId]
+    setTransactions((prev) =>
+      prev.map((t) => (t.id === trx.id ? { ...t, staff_assigned: updatedStaffAssigned } : t))
     );
-  };
 
-  // Toggle Checker selection
-  const toggleChecker = (staffId: number) => {
-    setSelectedCheckers((prev) =>
-      prev.includes(staffId) ? prev.filter((id) => id !== staffId) : [...prev, staffId]
-    );
-  };
-
-  // Save staff assignment
-  const handleSaveAssignment = async () => {
-    if (!activeModalTrx) return;
-
-    if (selectedWashers.length === 0) {
-      const confirmNoWasher = window.confirm(
-        'Belum ada washer yang dipilih. Apakah Anda yakin ingin menyimpan tanpa washer?'
-      );
-      if (!confirmNoWasher) return;
-    }
-
-    setIsSavingAssignment(true);
+    // Background sync to database
+    setSyncingTrxIds((prev) => ({ ...prev, [trx.id]: true }));
     try {
-      const finalAssignments = await calculateStaffCommissionsForTransaction(
-        activeModalTrx.price_list_id!,
-        activeModalTrx.tanggal,
-        selectedWashers,
-        selectedCheckers
+      const priceId = trx.price_list_id || 0;
+      const calculatedCommissions = await calculateStaffCommissionsForTransaction(
+        priceId,
+        trx.tanggal,
+        newWasherIds,
+        currentCheckerIds
       );
 
       await assignTransactionStaff(
-        activeModalTrx.id,
-        finalAssignments.map((a) => ({
-          staff_id: a.staff_id,
-          peran: a.peran,
-          komisi: a.komisi,
+        trx.id,
+        calculatedCommissions.map((c) => ({
+          staff_id: c.staff_id,
+          peran: c.peran,
+          komisi: c.komisi,
         }))
       );
-
-      await loadData();
-      closeModal();
-    } catch (err: any) {
-      console.error('Failed saving staff assignment:', err);
-      alert(`Gagal menyimpan penugasan: ${err.message || 'Terjadi kesalahan sistem'}`);
+    } catch (err) {
+      console.error('Gagal memperbarui penugasan washer:', err);
+      // Revert from server on error
+      loadData();
     } finally {
-      setIsSavingAssignment(false);
+      setSyncingTrxIds((prev) => ({ ...prev, [trx.id]: false }));
     }
   };
 
-  // Search filter
+  // 1-Click Toggle Checker Assignment
+  const handleToggleChecker = async (trx: Transaction, staffId: number) => {
+    const currentAssignments = trx.staff_assigned || [];
+    const currentWasherIds = currentAssignments
+      .filter((s) => s.peran === 'washer')
+      .map((s) => s.staff_id);
+    const currentCheckerIds = currentAssignments
+      .filter((s) => s.peran === 'checker')
+      .map((s) => s.staff_id);
+
+    const isCurrentlySelected = currentCheckerIds.includes(staffId);
+    const newCheckerIds = isCurrentlySelected
+      ? currentCheckerIds.filter((id) => id !== staffId)
+      : [...currentCheckerIds, staffId];
+
+    // Optimistic UI update
+    const staffObj = staffList.find((s) => s.id === staffId);
+    const updatedStaffAssigned: TransactionStaff[] = [
+      ...currentAssignments.filter((s) => s.peran !== 'checker'),
+      ...newCheckerIds.map((id) => {
+        const existing = currentAssignments.find((s) => s.staff_id === id && s.peran === 'checker');
+        const st = staffList.find((s) => s.id === id);
+        return {
+          transaction_id: trx.id,
+          staff_id: id,
+          peran: 'checker',
+          komisi: existing ? existing.komisi : 0,
+          staff_nama: existing?.staff_nama || st?.nama || `Checker #${id}`,
+          role: 'checker',
+        };
+      }),
+    ];
+
+    setTransactions((prev) =>
+      prev.map((t) => (t.id === trx.id ? { ...t, staff_assigned: updatedStaffAssigned } : t))
+    );
+
+    // Background sync to database
+    setSyncingTrxIds((prev) => ({ ...prev, [trx.id]: true }));
+    try {
+      const priceId = trx.price_list_id || 0;
+      const calculatedCommissions = await calculateStaffCommissionsForTransaction(
+        priceId,
+        trx.tanggal,
+        currentWasherIds,
+        newCheckerIds
+      );
+
+      await assignTransactionStaff(
+        trx.id,
+        calculatedCommissions.map((c) => ({
+          staff_id: c.staff_id,
+          peran: c.peran,
+          komisi: c.komisi,
+        }))
+      );
+    } catch (err) {
+      console.error('Gagal memperbarui penugasan checker:', err);
+      // Revert from server on error
+      loadData();
+    } finally {
+      setSyncingTrxIds((prev) => ({ ...prev, [trx.id]: false }));
+    }
+  };
+
+  // Open Edit Modal
+  const handleOpenEdit = (trx: Transaction) => {
+    setEditingTrx(trx);
+    setEditNopol(trx.no_polisi || '');
+    setEditCustomerNama(trx.customer_nama || '');
+    setEditCustomerHp(trx.customer_hp || '');
+    setEditPriceId(trx.price_list_id || 0);
+    setEditHarga(Number(trx.harga || 0));
+    setEditKeterangan(trx.keterangan || '');
+  };
+
+  const handlePriceSelectChange = (newPriceId: number) => {
+    setEditPriceId(newPriceId);
+    const selected = priceList.find((p) => p.id === newPriceId);
+    if (selected) {
+      setEditHarga(Number(selected.harga));
+    }
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingTrx) return;
+
+    if (!editNopol.trim()) {
+      alert('Nomor polisi (plat) wajib diisi!');
+      return;
+    }
+
+    setIsSavingEdit(true);
+    try {
+      const selectedPrice = priceList.find((p) => p.id === editPriceId);
+
+      await updateTransaction(editingTrx.id, {
+        no_polisi: editNopol.trim().toUpperCase(),
+        customer_nama: editCustomerNama.trim() || 'Pelanggan Umum',
+        customer_hp: editCustomerHp.trim() || undefined,
+        price_list_id: editPriceId || editingTrx.price_list_id,
+        kendaraan: selectedPrice?.kendaraan || editingTrx.kendaraan,
+        paket_nama: selectedPrice?.paket || editingTrx.paket_nama,
+        tipe: selectedPrice?.tipe || editingTrx.tipe,
+        fasilitas: selectedPrice?.fasilitas || editingTrx.fasilitas,
+        harga: editHarga,
+        keterangan: editKeterangan.trim() || null,
+      });
+
+      await loadData();
+      setEditingTrx(null);
+    } catch (err: any) {
+      console.error('Gagal mengedit transaksi:', err);
+      alert(`Gagal menyimpan perubahan: ${err.message || 'Terjadi kesalahan sistem'}`);
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
+
+  // Delete Transaction Handler
+  const handleConfirmDelete = async () => {
+    if (!deleteTargetTrx) return;
+
+    setIsDeleting(true);
+    try {
+      await deleteTransaction(deleteTargetTrx.id);
+      await loadData();
+      setDeleteTargetTrx(null);
+    } catch (err: any) {
+      console.error('Gagal menghapus transaksi:', err);
+      alert(`Gagal menghapus transaksi: ${err.message || 'Terjadi kesalahan sistem'}`);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  // Search filter (Nopol & Nama Pelanggan)
   const filteredTransactions = useMemo(() => {
     if (!searchQuery.trim()) return transactions;
     const q = searchQuery.toLowerCase().trim();
-    return transactions.filter(
-      (t) =>
-        t.no_polisi?.toLowerCase().includes(q) ||
-        t.customer_nama?.toLowerCase().includes(q) ||
-        t.no_transaksi?.toLowerCase().includes(q) ||
-        t.paket_nama?.toLowerCase().includes(q)
-    );
+    return transactions.filter((t) => {
+      const matchNopol = t.no_polisi?.toLowerCase().includes(q);
+      const matchCust = t.customer_nama?.toLowerCase().includes(q);
+      const matchNoTrx = t.no_transaksi?.toLowerCase().includes(q);
+      const matchPaket = t.paket_nama?.toLowerCase().includes(q);
+      return matchNopol || matchCust || matchNoTrx || matchPaket;
+    });
   }, [transactions, searchQuery]);
 
   return (
-    <div className="space-y-6">
-      {/* Top Header & Search Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="space-y-4">
+      {/* 8. HEADER & WORKFLOW BRANDING */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
         <div>
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-amber-500 text-white flex items-center justify-center text-xs font-black">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center text-sm font-black shadow-xs">
               2
             </div>
-            <h2 className="text-lg font-bold text-slate-900">Kendaraan Sedang Dikerjakan</h2>
-            <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300">
-              {transactions.length} Mobil Aktif
-            </span>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 id="heading-sedang-dikerjakan" className="text-xl font-bold tracking-tight text-slate-900">
+                  Kendaraan Sedang Dikerjakan
+                </h1>
+                <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-bold text-amber-800 border border-amber-200">
+                  {transactions.length} Kendaraan
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Klik nama washer atau checker untuk menugaskan atau membatalkan penugasan.
+              </p>
+            </div>
           </div>
-          <p className="text-xs text-slate-600 mt-1 ml-9">
-            Tugaskan petugas cuci (washer) & pemeriksa (checker). Dapat diganti sewaktu-waktu selama proses cuci berlangsung.
-          </p>
         </div>
 
+        {/* 9. SEARCH BAR */}
         <div className="flex items-center gap-2 w-full sm:w-auto">
-          <div className="relative flex-1 sm:w-64">
-            <Search className="w-4 h-4 text-slate-600 absolute left-3 top-1/2 -translate-y-1/2" />
+          <div className="relative flex-1 sm:w-72">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               id="input-search-sedang-dikerjakan"
               type="text"
-              placeholder="Cari Plat / Pelanggan..."
+              placeholder="Cari Nopol / Nama Pelanggan..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3.5 py-2 text-xs rounded-xl border border-slate-300 bg-white text-slate-900 focus:ring-2 focus:ring-blue-600/20"
+              className="w-full pl-9 pr-3.5 py-2 text-xs rounded-xl border border-slate-300 bg-slate-50/50 text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 transition"
             />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
 
           <button
             id="btn-refresh-sedang-dikerjakan"
             type="button"
             onClick={loadData}
-            title="Muat Ulang"
-            className="p-2.5 rounded-xl border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 transition"
+            title="Muat Ulang Data"
+            className="p-2 rounded-xl border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition flex items-center justify-center shrink-0 shadow-xs"
           >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-blue-600' : ''}`} />
           </button>
         </div>
       </div>
 
-      {/* Empty State */}
-      {!loading && filteredTransactions.length === 0 && (
-        <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center shadow-xs">
-          <div className="w-14 h-14 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto mb-3">
-            <Clock className="w-7 h-7" />
-          </div>
-          <h3 className="text-base font-bold text-slate-900">Tidak Ada Mobil Sedang Dikerjakan</h3>
-          <p className="text-xs text-slate-600 max-w-md mx-auto mt-1">
-            Saat ini tidak ada mobil yang berada dalam antrean pengerjaan. Input mobil baru yang datang di menu &quot;Mobil Masuk&quot;.
-          </p>
-          <button
-            id="btn-goto-mobil-masuk-empty"
-            type="button"
-            onClick={() => onNavigateStep?.('mobil-masuk')}
-            className="mt-4 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs inline-flex items-center gap-2 shadow-xs transition"
-          >
-            <Car className="w-4 h-4" />
-            <span>Input Mobil Masuk</span>
-          </button>
-        </div>
-      )}
-
-      {/* Grid of In-Progress Transactions */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filteredTransactions.map((trx) => {
-          const washers = (trx.staff_assigned || []).filter((s) => s.peran === 'washer');
-          const checkers = (trx.staff_assigned || []).filter((s) => s.peran === 'checker');
-          const hasWashers = washers.length > 0;
-
-          return (
-            <div
-              key={trx.id}
-              id={`card-dikerjakan-${trx.id}`}
-              className={`bg-white rounded-2xl border p-5 shadow-xs flex flex-col justify-between transition-all ${
-                highlightTrxId === trx.id
-                  ? 'border-blue-500 ring-2 ring-blue-500/20'
-                  : 'border-slate-200 hover:border-slate-300'
-              }`}
-            >
-              <div>
-                {/* Header Card */}
-                <div className="flex items-start justify-between gap-2 pb-3 border-b border-slate-100">
-                  <div>
-                    <span className="text-[10px] font-bold text-slate-600 tracking-wider">
-                      {trx.no_transaksi}
-                    </span>
-                    <h3 className="text-xl font-mono font-black text-slate-900 tracking-wide mt-0.5">
-                      {trx.no_polisi}
-                    </h3>
+      {/* 1 & 2. TABEL SEMUA KENDARAAN (VERTICAL CONTINUOUS TABLE, NO PAGINATION, NO CARDS LIMIT) */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse min-w-[1000px]">
+            <thead>
+              <tr className="bg-slate-900 text-white text-[11px] font-bold uppercase tracking-wider border-b border-slate-800">
+                <th className="py-3 px-3.5 text-center w-12">No</th>
+                <th className="py-3 px-3.5 w-36">Nopol</th>
+                <th className="py-3 px-3.5 w-44">Pelanggan</th>
+                <th className="py-3 px-3.5 w-48">Layanan</th>
+                <th className="py-3 px-3.5 w-28 text-right">Harga</th>
+                <th className="py-3 px-4 min-w-[280px]">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                    <span>Washer (Petugas Cuci)</span>
                   </div>
-
-                  <div className="text-right">
-                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
-                      <Clock className="w-3 h-3" />
-                      <span>{trx.waktu || 'Baru masuk'}</span>
-                    </span>
+                </th>
+                <th className="py-3 px-4 min-w-[180px]">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-blue-400"></span>
+                    <span>Checker (Pemeriksa)</span>
                   </div>
-                </div>
-
-                {/* Details */}
-                <div className="py-3 space-y-1.5 text-xs text-slate-600">
-                  <div className="flex justify-between">
-                    <span className="text-slate-600">Pelanggan:</span>
-                    <span className="font-bold text-slate-800">
-                      {trx.customer_nama} ({trx.customer_tier || 'Reguler'})
-                    </span>
-                  </div>
-
-                  <div className="flex justify-between">
-                    <span className="text-slate-600">Layanan:</span>
-                    <span className="font-bold text-slate-800 text-right">
-                      {trx.paket_nama} &bull; {trx.tipe}
-                    </span>
-                  </div>
-
-                  <div className="flex justify-between">
-                    <span className="text-slate-600">Harga:</span>
-                    <span className="font-black text-blue-700">
-                      Rp {formatNominal(trx.harga)}
-                    </span>
-                  </div>
-
-                  {trx.keterangan && (
-                    <div className="mt-2 p-2 rounded-lg bg-slate-50 border border-slate-200 text-[11px] text-slate-700">
-                      <strong>Catatan:</strong> {trx.keterangan}
-                    </div>
-                  )}
-                </div>
-
-                {/* Assigned Staff Badges */}
-                <div className="pt-2 pb-1 border-t border-slate-100">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-600 mb-1.5">
-                    Petugas Cuci (Washer)
-                  </p>
-
-                  {hasWashers ? (
-                    <div className="flex flex-wrap gap-1.5">
-                      {washers.map((w, idx) => (
-                        <span
-                          key={idx}
-                          className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200"
+                </th>
+                <th className="py-3 px-3.5 w-32">Kasir</th>
+                <th className="py-3 px-3.5 text-center w-36">Aksi</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 text-xs text-slate-800">
+              {/* Empty state */}
+              {!loading && filteredTransactions.length === 0 && (
+                <tr>
+                  <td colSpan={9} className="py-16 px-4 text-center">
+                    <div className="max-w-md mx-auto space-y-3">
+                      <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto">
+                        <Car className="w-6 h-6" />
+                      </div>
+                      <h3 className="text-sm font-bold text-slate-900">
+                        {searchQuery ? 'Tidak Ada Kendaraan Sesuai Pencarian' : 'Tidak Ada Kendaraan Sedang Dikerjakan'}
+                      </h3>
+                      <p className="text-xs text-slate-500">
+                        {searchQuery
+                          ? `Tidak ditemukan plat atau pelanggan dengan kata kunci "${searchQuery}".`
+                          : 'Semua mobil telah selesai dikerjakan atau belum ada mobil yang masuk.'}
+                      </p>
+                      {!searchQuery && (
+                        <button
+                          type="button"
+                          onClick={() => onNavigateStep?.('mobil-masuk')}
+                          className="mt-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs inline-flex items-center gap-1.5 shadow-xs transition"
                         >
-                          <span>🚿 {w.staff_nama}</span>
-                          <span className="text-[10px] font-semibold text-emerald-600">
-                            (Rp {formatNominal(w.komisi)})
+                          <Car className="w-4 h-4" />
+                          <span>Input Mobil Masuk</span>
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              )}
+
+              {/* Transaction Rows */}
+              {filteredTransactions.map((trx, index) => {
+                const assignedStaff = trx.staff_assigned || [];
+                const assignedWasherIds = assignedStaff
+                  .filter((s) => s.peran === 'washer')
+                  .map((s) => s.staff_id);
+                const assignedCheckerIds = assignedStaff
+                  .filter((s) => s.peran === 'checker')
+                  .map((s) => s.staff_id);
+
+                const isHighlighted = highlightTrxId === trx.id;
+                const isSyncing = syncingTrxIds[trx.id];
+                const cashierName = trx.kasir_nama || user?.nama || 'Kasir';
+
+                return (
+                  <tr
+                    key={trx.id}
+                    id={`row-trx-${trx.id}`}
+                    className={`transition-colors hover:bg-slate-50/80 ${
+                      isHighlighted ? 'bg-blue-50/50 ring-1 ring-inset ring-blue-400' : ''
+                    }`}
+                  >
+                    {/* 1. NO */}
+                    <td className="py-3 px-3.5 text-center font-bold text-slate-400 text-xs">
+                      {index + 1}
+                    </td>
+
+                    {/* 2. NOPOL */}
+                    <td className="py-3 px-3.5">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-mono font-black text-sm text-slate-900 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md tracking-wider">
+                          {trx.no_polisi}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 mt-1 text-[11px] text-slate-500">
+                        <span className="inline-flex items-center gap-1">
+                          <Clock className="w-3 h-3 text-slate-400" />
+                          <span>{trx.waktu ? trx.waktu.substring(0, 5) : '-'}</span>
+                        </span>
+                        <span>&bull;</span>
+                        <span className="font-mono text-[10px] text-slate-400">{trx.no_transaksi}</span>
+                      </div>
+                    </td>
+
+                    {/* 3. PELANGGAN */}
+                    <td className="py-3 px-3.5">
+                      <div className="font-bold text-slate-900 truncate max-w-[160px]">
+                        {trx.customer_nama}
+                      </div>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <span
+                          className={`text-[10px] font-bold px-1.5 py-0.2 rounded ${
+                            trx.customer_tier === 'gold'
+                              ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                              : 'bg-slate-100 text-slate-600'
+                          }`}
+                        >
+                          {trx.customer_tier === 'gold' ? '★ GOLD' : 'Reguler'}
+                        </span>
+                        {trx.customer_hp && (
+                          <span className="text-[11px] text-slate-400 font-mono flex items-center gap-0.5">
+                            <Phone className="w-2.5 h-2.5" />
+                            {trx.customer_hp}
                           </span>
-                        </span>
-                      ))}
+                        )}
+                      </div>
+                    </td>
 
-                      {checkers.map((c, idx) => (
-                        <span
-                          key={`chk-${idx}`}
-                          className="inline-flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-lg bg-blue-50 text-blue-800 border border-blue-200"
+                    {/* 4. LAYANAN */}
+                    <td className="py-3 px-3.5">
+                      <div className="font-bold text-slate-900">{trx.paket_nama}</div>
+                      <div className="text-[11px] text-slate-500 flex items-center gap-1 mt-0.5">
+                        <span className="font-medium text-slate-600">{trx.kendaraan}</span>
+                        {trx.tipe && <span>&bull; {trx.tipe}</span>}
+                      </div>
+                      {trx.keterangan && (
+                        <div className="mt-1 text-[10px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200/60 line-clamp-1">
+                          {trx.keterangan}
+                        </div>
+                      )}
+                    </td>
+
+                    {/* 5. HARGA */}
+                    <td className="py-3 px-3.5 text-right">
+                      <span className="font-mono font-black text-xs text-blue-700">
+                        Rp {formatNominal(trx.harga)}
+                      </span>
+                    </td>
+
+                    {/* 3. WASHER BUTTONS/CHIPS */}
+                    <td className="py-3 px-4">
+                      {activeWashers.length === 0 ? (
+                        <span className="text-xs text-slate-400 italic">Tidak ada washer aktif</span>
+                      ) : (
+                        <div className="flex flex-wrap gap-1.5">
+                          {activeWashers.map((washer) => {
+                            const isSelected = assignedWasherIds.includes(washer.id);
+                            return (
+                              <button
+                                key={washer.id}
+                                id={`btn-washer-${trx.id}-${washer.id}`}
+                                type="button"
+                                onClick={() => handleToggleWasher(trx, washer.id)}
+                                title={
+                                  isSelected
+                                    ? `Washer ${washer.nama} ditugaskan. Klik untuk batalkan.`
+                                    : `Klik untuk menugaskan ${washer.nama}`
+                                }
+                                className={`px-2.5 py-1 text-xs rounded-lg font-semibold transition-all select-none flex items-center gap-1 active:scale-95 cursor-pointer border ${
+                                  isSelected
+                                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs ring-1 ring-emerald-400 hover:bg-emerald-700'
+                                    : 'bg-slate-100 hover:bg-slate-200/90 text-slate-700 border-slate-200/80 hover:border-slate-300'
+                                }`}
+                              >
+                                {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                                <span>{washer.nama}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                      {assignedWasherIds.length === 0 && (
+                        <div className="mt-1 text-[10px] text-amber-600 font-semibold flex items-center gap-1">
+                          <AlertTriangle className="w-3 h-3 shrink-0" />
+                          <span>Pilih washer yang bertugas</span>
+                        </div>
+                      )}
+                    </td>
+
+                    {/* 4. CHECKER BUTTONS/CHIPS */}
+                    <td className="py-3 px-4">
+                      {activeCheckers.length === 0 ? (
+                        <span className="text-xs text-slate-400 italic">Tidak ada checker aktif</span>
+                      ) : (
+                        <div className="flex flex-wrap gap-1.5">
+                          {activeCheckers.map((checker) => {
+                            const isSelected = assignedCheckerIds.includes(checker.id);
+                            return (
+                              <button
+                                key={checker.id}
+                                id={`btn-checker-${trx.id}-${checker.id}`}
+                                type="button"
+                                onClick={() => handleToggleChecker(trx, checker.id)}
+                                title={
+                                  isSelected
+                                    ? `Checker ${checker.nama} ditugaskan. Klik untuk batalkan.`
+                                    : `Klik untuk menugaskan ${checker.nama}`
+                                }
+                                className={`px-2.5 py-1 text-xs rounded-lg font-semibold transition-all select-none flex items-center gap-1 active:scale-95 cursor-pointer border ${
+                                  isSelected
+                                    ? 'bg-blue-600 text-white border-blue-600 shadow-xs ring-1 ring-blue-400 hover:bg-blue-700'
+                                    : 'bg-slate-100 hover:bg-slate-200/90 text-slate-700 border-slate-200/80 hover:border-slate-300'
+                                }`}
+                              >
+                                {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                                <span>{checker.nama}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </td>
+
+                    {/* 5. KASIR */}
+                    <td className="py-3 px-3.5 font-medium text-slate-700">
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+                        <span className="truncate max-w-[110px]" title={cashierName}>
+                          {cashierName}
+                        </span>
+                      </div>
+                    </td>
+
+                    {/* 6. AKSI: [✏ Edit] [🗑 Hapus] + [💳 Bayar] */}
+                    <td className="py-3 px-3.5 text-center">
+                      <div className="flex items-center justify-center gap-1.5">
+                        {/* Edit Button */}
+                        <button
+                          id={`btn-edit-trx-${trx.id}`}
+                          type="button"
+                          onClick={() => handleOpenEdit(trx)}
+                          title="Edit Data Transaksi"
+                          className="px-2 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 hover:text-slate-900 font-semibold text-[11px] inline-flex items-center gap-1 transition shadow-2xs"
                         >
-                          <span>🔍 {c.staff_nama}</span>
-                        </span>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold flex items-center gap-1.5">
-                      <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                      <span>Belum ada washer yang ditugaskan</span>
-                    </div>
-                  )}
-                </div>
-              </div>
+                          <Edit2 className="w-3 h-3 text-slate-500" />
+                          <span>Edit</span>
+                        </button>
 
-              {/* Actions */}
-              <div className="mt-4 pt-3 border-t border-slate-100 flex items-center gap-2">
-                <button
-                  id={`btn-assign-washer-${trx.id}`}
-                  type="button"
-                  onClick={() => openAssignmentModal(trx)}
-                  className="flex-1 py-2.5 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition"
-                >
-                  <Users className="w-3.5 h-3.5" />
-                  <span>{hasWashers ? 'Ganti / Atur Washer' : 'Tugaskan Washer'}</span>
-                </button>
+                        {/* Hapus Button */}
+                        <button
+                          id={`btn-delete-trx-${trx.id}`}
+                          type="button"
+                          onClick={() => setDeleteTargetTrx(trx)}
+                          title="Hapus Transaksi"
+                          className="px-2 py-1 rounded-lg border border-rose-200 bg-white hover:bg-rose-50 text-rose-600 hover:text-rose-700 font-semibold text-[11px] inline-flex items-center gap-1 transition shadow-2xs"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          <span>Hapus</span>
+                        </button>
 
-                <button
-                  id={`btn-proceed-pay-${trx.id}`}
-                  type="button"
-                  onClick={() => onNavigateStep?.('pembayaran', trx.id)}
-                  title="Lanjut Pembayaran"
-                  className="py-2.5 px-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center justify-center gap-1 transition"
-                >
-                  <span>Bayar</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
-          );
-        })}
+                        {/* Direct Pay Button */}
+                        <button
+                          id={`btn-bayar-trx-${trx.id}`}
+                          type="button"
+                          onClick={() => onNavigateStep?.('pembayaran', trx.id)}
+                          title="Proses Pembayaran"
+                          className="p-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition shadow-2xs"
+                        >
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Footer info & summary */}
+        <div className="px-5 py-3 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-500">
+          <div>
+            Menampilkan <strong className="text-slate-800">{filteredTransactions.length}</strong> mobil dalam antrean pengerjaan.
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="flex items-center gap-1">
+              <span className="w-2.5 h-2.5 rounded-sm bg-emerald-600 inline-block"></span>
+              <span>Washer Terpilih</span>
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-2.5 h-2.5 rounded-sm bg-blue-600 inline-block"></span>
+              <span>Checker Terpilih</span>
+            </span>
+          </div>
+        </div>
       </div>
 
-      {/* ASSIGNMENT MODAL */}
-      {activeModalTrx && (
+      {/* MODAL: EDIT DATA TRANSAKSI */}
+      {editingTrx && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
-          <div className="bg-white w-full max-w-2xl rounded-2xl shadow-xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
-            {/* Modal Header */}
-            <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-              <div>
-                <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">
-                  Penugasan Tenaga Kerja Cuci
-                </span>
-                <h3 className="text-base font-black text-slate-900 mt-0.5">
-                  {activeModalTrx.no_polisi} &bull; {activeModalTrx.paket_nama} ({activeModalTrx.tipe})
-                </h3>
+          <div className="bg-white w-full max-w-lg rounded-2xl shadow-xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="px-5 py-3.5 bg-slate-900 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Edit2 className="w-4 h-4 text-blue-400" />
+                <h3 className="text-sm font-bold">Edit Data Transaksi: {editingTrx.no_transaksi}</h3>
               </div>
-
               <button
-                id="btn-close-assignment-modal"
                 type="button"
-                onClick={closeModal}
-                className="p-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition"
+                onClick={() => setEditingTrx(null)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4" />
               </button>
             </div>
 
-            {/* Modal Body */}
-            <div className="p-6 space-y-5 overflow-y-auto">
-              {/* SECTION: SELECT WASHERS */}
+            <div className="p-5 space-y-4 overflow-y-auto text-xs">
+              {/* Plat Nomor */}
               <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-xs font-bold text-slate-800 uppercase flex items-center gap-1.5">
-                    <Users className="w-4 h-4 text-blue-600" />
-                    <span>PILIH WASHER (Bisa Lebih Dari 1 Orang)</span>
-                  </label>
-                  <span className="text-xs font-semibold text-slate-600">
-                    {selectedWashers.length} Dipilih
-                  </span>
+                <label className="block font-bold text-slate-700 mb-1">Nomor Polisi (Plat Mobil)</label>
+                <input
+                  type="text"
+                  value={editNopol}
+                  onChange={(e) => setEditNopol(e.target.value.toUpperCase())}
+                  placeholder="Contoh: B 1234 ABC"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 font-mono font-bold text-sm uppercase focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600"
+                />
+              </div>
+
+              {/* Nama Pelanggan & HP */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Nama Pelanggan</label>
+                  <input
+                    type="text"
+                    value={editCustomerNama}
+                    onChange={(e) => setEditCustomerNama(e.target.value)}
+                    placeholder="Nama Pelanggan"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 font-medium focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600"
+                  />
                 </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  {washerStaff.map((staff) => {
-                    const isSelected = selectedWashers.includes(staff.id);
-                    // Find effective multiplier
-                    const multObj = multipliers
-                      .filter((m) => m.staff_id === staff.id && m.berlaku_mulai <= activeModalTrx.tanggal)
-                      .sort(
-                        (a, b) =>
-                          new Date(b.berlaku_mulai).getTime() - new Date(a.berlaku_mulai).getTime()
-                      )[0];
-                    const multPercent = multObj ? Number(multObj.multiplier) : 0;
-
-                    return (
-                      <button
-                        key={staff.id}
-                        id={`btn-toggle-washer-${staff.id}`}
-                        type="button"
-                        onClick={() => toggleWasher(staff.id)}
-                        className={`p-3 rounded-xl border text-left flex items-center justify-between transition-all ${
-                          isSelected
-                            ? 'bg-blue-50/80 border-blue-600 text-blue-950 ring-1 ring-blue-600'
-                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <div
-                            className={`w-5 h-5 rounded-md flex items-center justify-center text-xs font-bold shrink-0 ${
-                              isSelected ? 'bg-blue-600 text-white' : 'border border-slate-300'
-                            }`}
-                          >
-                            {isSelected ? '✓' : ''}
-                          </div>
-                          <div className="truncate">
-                            <p className="text-xs font-bold truncate">{staff.nama}</p>
-                            <p className="text-[10px] text-slate-600">Role: Washer</p>
-                          </div>
-                        </div>
-
-                        {multPercent > 0 ? (
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 shrink-0">
-                            +{multPercent}%
-                          </span>
-                        ) : (
-                          <span className="text-[10px] text-slate-600 shrink-0">0%</span>
-                        )}
-                      </button>
-                    );
-                  })}
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">No HP / WhatsApp</label>
+                  <input
+                    type="text"
+                    value={editCustomerHp}
+                    onChange={(e) => setEditCustomerHp(e.target.value)}
+                    placeholder="0812xxxx"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 font-medium focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600"
+                  />
                 </div>
               </div>
 
-              {/* SECTION: SELECT CHECKERS */}
-              {checkerStaff.length > 0 && (
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="text-xs font-bold text-slate-800 uppercase flex items-center gap-1.5">
-                      <span>CHECKER (Opsional)</span>
-                    </label>
-                    <span className="text-[11px] text-slate-600">
-                      *Checker dibagi rata tanpa multiplier
-                    </span>
-                  </div>
+              {/* Pilihan Paket Layanan & Harga */}
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Paket Layanan / Price List</label>
+                <select
+                  value={editPriceId}
+                  onChange={(e) => handlePriceSelectChange(Number(e.target.value))}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white font-medium focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600"
+                >
+                  <option value={0}>-- Pilih Paket Layanan --</option>
+                  {priceList.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.kendaraan} &bull; {p.paket} ({p.tipe}) - Rp {formatNominal(p.harga)}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    {checkerStaff.map((staff) => {
-                      const isSelected = selectedCheckers.includes(staff.id);
-                      return (
-                        <button
-                          key={staff.id}
-                          id={`btn-toggle-checker-${staff.id}`}
-                          type="button"
-                          onClick={() => toggleChecker(staff.id)}
-                          className={`p-3 rounded-xl border text-left flex items-center justify-between transition-all ${
-                            isSelected
-                              ? 'bg-blue-50/80 border-blue-600 text-blue-950 ring-1 ring-blue-600'
-                              : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <div
-                              className={`w-5 h-5 rounded-md flex items-center justify-center text-xs font-bold shrink-0 ${
-                                isSelected ? 'bg-blue-600 text-white' : 'border border-slate-300'
-                              }`}
-                            >
-                              {isSelected ? '✓' : ''}
-                            </div>
-                            <div>
-                              <p className="text-xs font-bold">{staff.nama}</p>
-                              <p className="text-[10px] text-slate-600">Role: Checker</p>
-                            </div>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
+              {/* Harga Nominal */}
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Harga Transaksi (Rp)</label>
+                <input
+                  type="number"
+                  value={editHarga}
+                  onChange={(e) => setEditHarga(Number(e.target.value))}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 font-mono font-bold text-sm text-blue-700 focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600"
+                />
+              </div>
 
-              {/* LIVE COMMISSION BREAKDOWN PREVIEW */}
-              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-bold text-slate-800 uppercase flex items-center gap-1.5">
-                    <DollarSign className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Simulasi Perhitungan Komisi</span>
-                  </span>
-                  {calcLoading && (
-                    <span className="text-[10px] text-slate-600">Menghitung...</span>
-                  )}
-                </div>
-
-                {calcPreview.length > 0 ? (
-                  <div className="space-y-2">
-                    {calcPreview.map((item, idx) => {
-                      const staff = staffList.find((s) => s.id === item.staff_id);
-                      return (
-                        <div
-                          key={idx}
-                          className="flex items-center justify-between py-1 border-b border-slate-200/60 last:border-0 text-xs"
-                        >
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-slate-800">{staff?.nama}</span>
-                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-200 text-slate-700 capitalize">
-                              {item.peran}
-                            </span>
-                            {item.multiplier !== undefined && item.multiplier > 0 && (
-                              <span className="text-[10px] font-bold text-amber-700">
-                                (+{item.multiplier}%)
-                              </span>
-                            )}
-                          </div>
-                          <span className="font-black text-emerald-700">
-                            Rp {formatNominal(item.komisi)}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <p className="text-xs text-slate-600 italic">
-                    Pilih minimal 1 washer untuk melihat estimasi pembagian komisi.
-                  </p>
-                )}
+              {/* Catatan / Keterangan */}
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Catatan Khusus (Opsional)</label>
+                <textarea
+                  rows={2}
+                  value={editKeterangan}
+                  onChange={(e) => setEditKeterangan(e.target.value)}
+                  placeholder="Catatan pengerjaan atau permintaan khusus pelanggan..."
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 font-medium focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600"
+                />
               </div>
             </div>
 
-            {/* Modal Footer */}
-            <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2.5">
+            <div className="px-5 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2">
               <button
-                id="btn-cancel-assignment-modal"
                 type="button"
-                onClick={closeModal}
-                className="px-4 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-700 font-bold text-xs hover:bg-slate-100 transition"
+                onClick={() => setEditingTrx(null)}
+                disabled={isSavingEdit}
+                className="px-4 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 font-semibold text-xs text-slate-700 transition"
               >
                 Batal
               </button>
-
               <button
-                id="btn-save-assignment-modal"
                 type="button"
-                disabled={isSavingAssignment}
-                onClick={handleSaveAssignment}
-                className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-black text-xs flex items-center gap-1.5 shadow-sm transition"
+                onClick={handleSaveEdit}
+                disabled={isSavingEdit}
+                className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 font-bold text-xs text-white inline-flex items-center gap-1.5 transition shadow-xs disabled:opacity-50"
               >
-                <CheckCircle2 className="w-4 h-4" />
-                <span>{isSavingAssignment ? 'Menyimpan...' : 'Simpan Penugasan'}</span>
+                {isSavingEdit ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Menyimpan...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Simpan Perubahan</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: KONFIRMASI HAPUS TRANSAKSI */}
+      {deleteTargetTrx && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-xl border border-slate-200 overflow-hidden flex flex-col">
+            <div className="p-6 text-center space-y-3">
+              <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <h3 className="text-base font-bold text-slate-900">Hapus Antrean Mobil?</h3>
+              <p className="text-xs text-slate-600">
+                Apakah Anda yakin ingin menghapus antrean pengerjaan untuk mobil dengan plat{' '}
+                <strong className="font-mono text-slate-900 font-bold">{deleteTargetTrx.no_polisi}</strong> (
+                {deleteTargetTrx.customer_nama})? Tindakan ini tidak dapat dibatalkan.
+              </p>
+            </div>
+
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDeleteTargetTrx(null)}
+                disabled={isDeleting}
+                className="px-4 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 font-semibold text-xs text-slate-700 transition"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                disabled={isDeleting}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 font-bold text-xs text-white inline-flex items-center gap-1.5 transition shadow-xs disabled:opacity-50"
+              >
+                {isDeleting ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Menghapus...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Ya, Hapus Mobil</span>
+                  </>
+                )}
               </button>
             </div>
           </div>
